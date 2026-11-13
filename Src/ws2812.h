@@ -1,5 +1,6 @@
 #ifndef WS2812_H
 #define WS2812_H
+#include "devconfdef.h"//LED_RGBW
 /*
 Библиотека для работы со светодиодами ws28xx
 Каждый диод кодируется тремя цветами максимальное значение для каждого цвета 255
@@ -71,7 +72,7 @@ RES - |_______TRES_______|     - код RES (установки значений
 #define WS_LED_COUNT 6
 #define WS_RES_VAL 64
 #define WS_BITS_PER_COLOR 8
-//#define LED_RGBW
+//LED_RGBW задается в devconfdef.h
 #ifdef LED_RGBW
 	#define WS_COLORS_PER_PIX 4
 #else
@@ -222,12 +223,9 @@ void setAllLedsColor(unsigned short int color);
 void setAllLedsSat(unsigned char sat);
 void setRGBColorCh(unsigned char led, unsigned char r,unsigned char g, unsigned char b,unsigned char w);
 void setLedMode(unsigned char mode);
-void onLedRainbow(unsigned char time,unsigned char rue, unsigned char rueDiff);
-void ledRainbow(unsigned short int time,unsigned char rue, unsigned char rueDiff);
 void ledFireEff(unsigned short int time);
 void ledEff(unsigned char eff);
 //void refreshWsLed(unsigned char led, struct RgbColor *rgb);
 //void refreshWsLedRgbBr(unsigned char led,struct RgbColor *rgb);
 void initWs2812Buff(void);
-void setRGBWhiteAll(unsigned char val);
 #endif //WS2812_H

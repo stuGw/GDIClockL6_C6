@@ -3,37 +3,79 @@
 //Файл описывает параметры для различных типов часов
 //Тип энкодера
 #define ENC_DEV_COEF 1
+//Число переходов состояния энкодера (четвертей периода) на один щелчок:
+//  4 - щелчок на полный период (в положении покоя на выводах всегда 11);
+//  2 - щелчок на полпериода (в покое поочередно 11 и 00, типично для EC11 на 30 щелчков/15 импульсов).
+//Если значение меняется на каждый второй щелчок - поставить 2, если сразу на 2 - поставить 4.
+#define ENC_QSTEPS 2
 //alum bt1
 //in4 bt1
 //in12_6 bt2
-//#define ENC_BT0
+#define ENC_BT0
 //#define ENC_BT1
-#define ENC_BT2
+//#define ENC_BT2
 
 
 
-//Управление
-#define CONF_BUTT
-//#define CONF_B_ENC
+//Управление (выбрать ровно одно):
+//  CONF_B_ENC - энкодер с кнопкой (вывод кнопки - см. ENC_BT* выше);
+//  CONF_BUTT  - две кнопки без энкодера: PB0 - левая ("меню"), PB2 - правая ("значение"),
+/*
+ *┌──────────────────┬───────────────────────────────────────┬──────────────────────┐
+  │                  │               Вне меню                │        В меню        │
+  ├──────────────────┼───────────────────────────────────────┼──────────────────────┤
+  │ Правая, короткое │ яркость ламп +1                       │ значение +1 по кругу │
+  ├──────────────────┼───────────────────────────────────────┼──────────────────────┤
+  │ Правая, двойное  │ эффект смены цифр +1                  │ значение −1          │
+  ├──────────────────┼───────────────────────────────────────┼──────────────────────┤
+  │ Правая, долгое   │ вход в меню (сразу показываются часы) │ нет                  │
+  ├──────────────────┼───────────────────────────────────────┼──────────────────────┤
+  │ Левая, короткое  │ яркость подсветки +1                  │ следующий пункт      │
+  ├──────────────────┼───────────────────────────────────────┼──────────────────────┤
+  │ Левая, двойное   │ показать дату                         │ нет                  │
+  └──────────────────┴───────────────────────────────────────┴──────────────────────┘
+ */
+//in17 - 02
+//in4 - 01
+//               управление описано в menu.c перед confBButt().
+//#define CONF_BUTT_01
+//#define CONF_BUTT_02
+//#define CONF_BUTT_10
+//#define CONF_BUTT_12
+//#define CONF_BUTT_20
+//#define CONF_BUTT_21
+
+#define CONF_B_ENC
+//Источник тактирования RTC (выбрать ровно один):
+//  RTC_EXT_CLOCK - выход 32768 Гц от DS3231 (вход LSE в режиме внешнего сигнала);
+//  RTC_INT_CLOCK - HSE/128.
 #define RTC_EXT_CLOCK
 //#define RTC_INT_CLOCK
-//Тип ламп
-//#define MODULE_IN4
+
+//Светодиоды подсветки: LED_RGBW - SK6812 RGBW (4 байта на светодиод),
+//закомментировать для WS2812 RGB (3 байта на светодиод)
+#define LED_RGBW
+
+//Частота кварца, Гц. Поддерживается только 8 МГц: PLL x5 дает 40 МГц, под которые рассчитаны
+//временные параметры WS2812 (TIM3), I2C и таймеры индикации (см. проверку в system.h)
+#define QUARZ_FREQ 8000000
+//Тип ламп (выбрать ровно один)
+//#define MODULE_IN4_4
+#define MODULE_IN4
 //#define MODULE_IN4_4DBG
 //#define MODULE_IN8_SPB
-#define MODULE_IN14_SPB
+//#define MODULE_IN14_SPB
 //#define MODULE_IN8_R
 //#define MODULE_IN8_RN
 //#define MODULE_IN14_R
-//#define MODULE_IN8_DBG
 //#define MODULE_IN17
 //#define MODULE_IN12Z_R
 //#define MODULE_IN14_SP
 //#define MODULE_ZM570M
 //#define MODULE_IN12_6
-//Время отображения даты и времени(в секундах)
+//Время отображения даты (в секундах)
 #define SHOW_DATE_SEC 5
-#define SHOW_TIME_SEC 30
+
 
 
 #define SHOW_DT_M 5
@@ -43,4 +85,32 @@
 #define SHOW_DT_M2 00
 #define SHOW_DT_H2 23
 #define SHOW_DT_S2 0
+
+//Сторожевой таймер (IWDG, ~2 c): перезагрузка при зависании программы.
+//При остановке в отладчике не срабатывает. Закомментировать, чтобы отключить.
+#define USE_IWDG
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~ Проверка конфигурации ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#if (defined(MODULE_IN4_4) + defined(MODULE_IN4) + defined(MODULE_IN4_4DBG) + defined(MODULE_IN14_R) + \
+	defined(MODULE_IN14_SPB) + defined(MODULE_IN8_SPB) + defined(MODULE_ZM570M) + defined(MODULE_IN17) + \
+	defined(MODULE_IN12Z_R) + defined(MODULE_IN8_R) + \
+	defined(MODULE_IN8_RN) + defined(MODULE_IN12_6) + defined(MODULE_IN14_SP)) != 1
+#error "devconfdef.h: должен быть выбран ровно один тип ламп MODULE_*"
+#endif
+
+#if (defined(CONF_BUTT_01) + defined(CONF_BUTT_02) + defined(CONF_BUTT_10) + \
+     defined(CONF_BUTT_12) + defined(CONF_BUTT_20) + defined(CONF_BUTT_21) + \
+	 defined(CONF_B_ENC)) != 1
+#error "CONF_BUTT/CONF_ENC: должен быть выбран ровно один вариант CONF_BUTT_xx"
+#endif
+
+
+#if (defined(RTC_EXT_CLOCK) + defined(RTC_INT_CLOCK)) != 1
+#error "devconfdef.h: должно быть выбрано ровно одно из RTC_EXT_CLOCK / RTC_INT_CLOCK"
+#endif
+
+//Вывод кнопки энкодера нужен только при CONF_B_ENC: по нему инициализируется указатель be (system.c)
+#if defined(CONF_B_ENC) && ((defined(ENC_BT0) + defined(ENC_BT1) + defined(ENC_BT2)) != 1)
+#error "devconfdef.h: должен быть выбран ровно один из ENC_BT0 / ENC_BT1 / ENC_BT2"
+#endif
 #endif

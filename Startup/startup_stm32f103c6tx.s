@@ -111,8 +111,8 @@ LoopForever:
 */
   .section .text.Default_Handler,"ax",%progbits
 Default_Handler:
-Infinite_Loop:
-  b Infinite_Loop
+  /* Unexpected interrupt: go to HardFault_Handler (main.c), which turns off the tubes */
+  b HardFault_Handler
   .size Default_Handler, .-Default_Handler
 
 /******************************************************************************

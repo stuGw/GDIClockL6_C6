@@ -76,13 +76,16 @@ void confAllLedsBright(unsigned short int currValue);
  void confDataInterv(unsigned short int currValue);
  void confGdiRve(unsigned short int currValue);
  void swMenu(char punkt, unsigned short int val);
-void initConfVals(void);							
+void initConfVals(void);
+//Сохранение настроек: снимок сохраняемых значений и их восстановление (формат - см. menu.c)
+#define CONF_SAVED_COUNT 22
+void confSnapshot(unsigned short* out);
+unsigned char confRestore(const unsigned short* v);							
 void initConfig(void);
  void confBButt(char bLeft, char bRight);
 void confByEnc(unsigned char bv, unsigned short int ev, signed char sign);
-void confByEncM(unsigned char bv, unsigned short int ev, signed char sign);
 //Обработка пользовательского интерфейса ввода
 void handleUI(volatile struct Button* bt);
-void handleUIButt(volatile struct Button* bt,  volatile struct Button* bt2 );
+void handleUIButt(volatile struct Button* btLeft, volatile struct Button* btRight);
 
 #endif//MENU_H

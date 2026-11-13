@@ -5,7 +5,7 @@
 #include "time.h"
 #include "ws2812.h"
 //Используется для эффектов переключенияя
-unsigned short int flgFTsk = 0;
+volatile unsigned short int flgFTsk = 0;
 const unsigned char tskFArr[6] = {FTSK_0,FTSK_1,FTSK_2,FTSK_3,FTSK_4,FTSK_5};
 //Коды катодов и анодов
 const unsigned short int LCat[11] = {CATHODE_0,CATHODE_1,CATHODE_2,CATHODE_3,CATHODE_4,CATHODE_5,CATHODE_6,CATHODE_7,CATHODE_8,CATHODE_9,ZPT_R};
@@ -22,8 +22,8 @@ extern struct timeNDate tmdt;
 //Общая я ркость индикаторов
 unsigned char yarkAll;
 //Значения для индикаторов(устанавливаются каждую сек. по прерыванию от ЧРВ)
-extern char gdiVal[];
-extern char flgFrEff;
+extern volatile unsigned char gdiVal[];
+extern unsigned char flgFrEff;
 extern char fireYark;
 extern unsigned char flagSecType;
 extern char flgShow;
@@ -107,10 +107,6 @@ void setGdiBrightAll(unsigned char value)
 	else{ gdi[4].brAll = 0; gdi[5].brAll = 0;}
 }
 
-void perebor(unsigned char ind, unsigned char num)
-{
-	
-}
 void offCommas(void)
 {
 	gdi[0].br[10] = 0; gdi[1].br[10] = 0; gdi[2].br[10] = 0;
@@ -186,29 +182,6 @@ void setHw2NumsToInds(unsigned int n1, unsigned int n2)
 
 }
 
-void setHwStringToInds(const char* str)
-{
-	int size = sizeof(str);
-	int i = 0;
-
-	while(i<11)
-	{
-		gdi[0].br[i] = 0;
-		gdi[1].br[i] = 0;
-		gdi[2].br[i] = 0;
-		gdi[3].br[i] = 0;
-		gdi[4].br[i] = 0;
-		gdi[5].br[i] = 0;
-		i++;
-	}
-	i = 0;
-	while((i<size)&&(i<6))
-	{
-		if((str[i]>48)&&(str[i]<58))gdi[i].br[str[i]-48] = gdi[i].brAll;
-		i++;
-	}
-
-}
 //Обновляем катоды в соответствии с их яркостью
  void refrIndCaths(unsigned char index,unsigned char tmrBr)
 {
@@ -248,18 +221,20 @@ void fireIndCycle()
 	}
 }
 
-//Зажигание индикаторов в режиме "пламени"
-void fireIndFireEffCycle()
-{
-}
 //Автояркость для gdi
 void autoBright(void)
 {
+	static unsigned short int lastBr = 0;
 	unsigned short int adcBrVal = 0;
 	adcBrVal =  getLightSensValue();
 
 	if(adcBrVal<=3)adcBrVal = 3;
 	if(adcBrVal>59)adcBrVal = 59;
+	//Гистерезис: на границе ступени значение не дергается между соседними уровнями
+	//(каждая смена яркости подсветки перезапускает передачу на светодиоды)
+	if((adcBrVal != lastBr) && (adcBrVal - lastBr < 2) && (lastBr - adcBrVal < 2) && (adcBrVal != 3) && (adcBrVal != 59))
+		adcBrVal = lastBr;
+	lastBr = adcBrVal;
 	yarkAll = adcBrVal;
 	if(flgFrEff) fireYark = (adcBrVal/20);
 	else
@@ -271,7 +246,7 @@ void autoBright(void)
 /*~~~~~~~~~~~~~~~~~~~~~Стандартный эффект плавного переключения~~~~~~~~~~~~~~~~~~~~~~~~~~
 * GDI_EFF_PL1 3
 * Установка значений*/
-void setIndCathFade(register unsigned char ind,register unsigned char cath)
+static void setIndCathFade_unsafe(register unsigned char ind,register unsigned char cath)
 {
 	unsigned char tmp;
 	tmp = gdi[ind].prevC;
@@ -282,6 +257,14 @@ void setIndCathFade(register unsigned char ind,register unsigned char cath)
 	gdi[ind].currC = cath;
 	gdi[ind].cathTm = 0;
 	flgFTsk|= tskFArr[ind]; //Устанавливаем флаг для текущего индикатора
+}
+
+//Обертка: изменение состояния индикатора атомарно относительно прерываний RTC/TIM1/TIM2
+void setIndCathFade(register unsigned char ind,register unsigned char cath)
+{
+	IRQ_SAVE();
+	setIndCathFade_unsafe(ind,cath);
+	IRQ_RESTORE();
 }
 /*Плавное изменение катодов*/
  void cathFade(unsigned char ind)
@@ -307,7 +290,7 @@ void cathFadePrv(unsigned char ind)
 		if(gdi[ind].br[gdi[ind].prevC]>0) gdi[ind].br[gdi[ind].prevC]--;
 		else flgTskRdy|=0xf0;
 
-		gdi[ind].br[gdi[ind].currC] = gdi[ind].br[gdi[ind].currC] = gdi[ind].brAll; flgTskRdy|=0x0f;
+		gdi[ind].br[gdi[ind].currC] = gdi[ind].brAll; flgTskRdy|=0x0f;
 
 		if(flgTskRdy == 0xff)flgFTsk&=~tskFArr[ind];
 	}
@@ -334,7 +317,7 @@ void cathFadePrv(unsigned char ind)
 /*~~~~~~~~~~~~~~~~~~~~~Эффект с перебором всех цифр~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 * GDI_EFF_RUE 1
 * Установка значений*/
-void setIndCathRue(register unsigned char ind,register unsigned char cath)
+static void setIndCathRue_unsafe(register unsigned char ind,register unsigned char cath)
 {
 	unsigned char tmp;
 
@@ -351,6 +334,14 @@ void setIndCathRue(register unsigned char ind,register unsigned char cath)
 	gdi[ind].cathTm = 0;
 	flgFTsk|= tskFArr[ind]; //Устанавливаем флаг для текущего индикатора
 	gdi[ind].nRueCat = in14CathsPos[cath]+1;
+}
+
+//Обертка: изменение состояния индикатора атомарно относительно прерываний RTC/TIM1/TIM2
+void setIndCathRue(register unsigned char ind,register unsigned char cath)
+{
+	IRQ_SAVE();
+	setIndCathRue_unsafe(ind,cath);
+	IRQ_RESTORE();
 }
 /*Изменение очередью*/
  void cathRue(unsigned char ind)
@@ -383,7 +374,7 @@ void setIndCathRue(register unsigned char ind,register unsigned char cath)
 	}
 }
 
- void setIndCathRueS(register unsigned char ind,register unsigned char cath)
+static void setIndCathRueS_unsafe(register unsigned char ind,register unsigned char cath)
 {
 	unsigned char tmp;
 
@@ -400,6 +391,14 @@ void setIndCathRue(register unsigned char ind,register unsigned char cath)
 	gdi[ind].cathTm = 0;
 	flgFTsk|= tskFArr[ind]; //Устанавливаем флаг для текущего индикатора
 	gdi[ind].nRueCat = in14CathsPos[cath]+1;
+}
+
+//Обертка: изменение состояния индикатора атомарно относительно прерываний RTC/TIM1/TIM2
+void setIndCathRueS(register unsigned char ind,register unsigned char cath)
+{
+	IRQ_SAVE();
+	setIndCathRueS_unsafe(ind,cath);
+	IRQ_RESTORE();
 }
 /*Изменение очередью*/
  void cathRueS(unsigned char ind)
@@ -437,7 +436,7 @@ void setIndCathRue(register unsigned char ind,register unsigned char cath)
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Простое переключение~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 *GDI_EFF_STD 0
 *Установка значений*/
- void setIndCath(register unsigned char ind,register unsigned char cath)
+static void setIndCath_unsafe(register unsigned char ind,register unsigned char cath)
 {
 
 	if(gdi[ind].currC!=cath)
@@ -447,6 +446,14 @@ void setIndCathRue(register unsigned char ind,register unsigned char cath)
 	memset(gdi[ind].br,0,10);
 	gdi[ind].br[cath] = gdi[ind].brAll;
 	gdi[ind].br[gdi[ind].prevC] = 0;//gdi[ind].brightness;
+}
+
+//Обертка: изменение состояния индикатора атомарно относительно прерываний RTC/TIM1/TIM2
+void setIndCath(register unsigned char ind,register unsigned char cath)
+{
+	IRQ_SAVE();
+	setIndCath_unsafe(ind,cath);
+	IRQ_RESTORE();
 }
 /* Переключение в cathFade()*/
 
@@ -508,7 +515,7 @@ void setIndCathRue(register unsigned char ind,register unsigned char cath)
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Эффект с двумя катодами одновременно~~~~~~~~~~~~~~~~~~~~~
 *GDI_EFF_2CF 2
 *Установка значений*/
- void setIndCathTwoCaths(unsigned char ind,register unsigned char cath)
+static void setIndCathTwoCaths_unsafe(unsigned char ind,register unsigned char cath)
 {
 
 	unsigned char tmp;
@@ -527,6 +534,14 @@ void setIndCathRue(register unsigned char ind,register unsigned char cath)
 	gdi[ind].br[gdi[ind].prevC] = gdi[ind].brAll;
 	flgFTsk|= tskFArr[ind]; //Устанавливаем флаг для текущего индикатора
 	gdi[ind].cathTm = 0;
+}
+
+//Обертка: изменение состояния индикатора атомарно относительно прерываний RTC/TIM1/TIM2
+void setIndCathTwoCaths(register unsigned char ind,register unsigned char cath)
+{
+	IRQ_SAVE();
+	setIndCathTwoCaths_unsafe(ind,cath);
+	IRQ_RESTORE();
 }
 /*Переключение*/
  void cathTwoCaths(unsigned char ind)
@@ -568,8 +583,12 @@ gdi[0].br[gdi[0].currC] = fCfArr[i];gdi[0].brAll = fCfArr[i]; //fireEffP[fireYar
 		gdi[4].br[gdi[4].currC] = fCfArr[m];gdi[4].brAll = fCfArr[m];//fireEffP[fireYark][i];gdi[4].brAll = fireEffP[fireYark][i];
 		gdi[5].br[gdi[5].currC] = fCfArr[n];gdi[5].brAll = fCfArr[n];//fireEffP[fireYark][i];gdi[5].brAll = fireEffP[fireYark][i];
 		i++; j++; k++; l++; m++; n++;
-		if(i>=FIRE_COEF_CNT)i=0;if(j>=FIRE_COEF_CNT)j=0;if(k>=FIRE_COEF_CNT)k=0;
-		if(l>=FIRE_COEF_CNT)l=0;if(m>=FIRE_COEF_CNT)m=0;if(n>=FIRE_COEF_CNT)n=0;
+		if(i>=FIRE_COEF_CNT)i=0;
+		if(j>=FIRE_COEF_CNT)j=0;
+		if(k>=FIRE_COEF_CNT)k=0;
+		if(l>=FIRE_COEF_CNT)l=0;
+		if(m>=FIRE_COEF_CNT)m=0;
+		if(n>=FIRE_COEF_CNT)n=0;
 		blinkTimer = 0;
 	}
 }

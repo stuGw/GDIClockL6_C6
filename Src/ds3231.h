@@ -35,11 +35,6 @@
 
 #include "system.h"
 
-void ds3231StartOsc(void);
-void ds3231StopOsc(void);
-void ds3231GetDate(unsigned char* dateBuffer);
-void ds3231GetTime(unsigned char* timeBuffer);
 void ds3231SetDate(unsigned char* dateBuffer);
 void ds3231SetTime(unsigned char* timeBuffer);
-void ds3231GetTemp(char* tempBuffer);
 #endif //DS3231

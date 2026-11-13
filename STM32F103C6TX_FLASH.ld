@@ -42,11 +42,17 @@ _Min_Heap_Size = 0x200; /* required amount of heap */
 _Min_Stack_Size = 0x400; /* required amount of stack */
 
 /* Memories definition */
+/* Последняя страница flash (1 КБ) отдана под сохраненные настройки (см. settings.c), поэтому
+   под код и данные отведено 31 КБ из 32. Код не может залезть на страницу настроек: линковщик
+   выдаст ошибку, если образ не помещается. */
 MEMORY
 {
   RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 10K
-  FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 32K
+  FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 31K
 }
+
+/* Адрес страницы настроек: сразу за областью FLASH (0x08007C00) */
+_settings_page = ORIGIN(FLASH) + LENGTH(FLASH);
 
 /* Sections */
 SECTIONS

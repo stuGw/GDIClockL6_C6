@@ -16,12 +16,13 @@
 #include "ds3231.h"
 #include <stdlib.h>
 #include "menu.h"
+#include "settings.h"
 
 //v1.0.5
 extern unsigned char flagAutoYarkost;
 char statusb = 0;
 extern volatile char flgLongButt;
-unsigned int sysCounter = 0;
+volatile unsigned int sysCounter = 0;
 volatile unsigned short int flgR = 0;
 volatile unsigned short int flgD = 0;
 unsigned short int rueInterv[6] = {1,1,5,15,30,59};
@@ -53,7 +54,7 @@ extern unsigned short encoderCounter;
 extern unsigned short encoderMaxValue;
 
 struct timeNDate tmdt;
-unsigned char secFlag = 0;
+volatile unsigned char secFlag = 0;
 extern volatile unsigned char flgWSTransfer;
 char fireYark = 2;
 
@@ -61,46 +62,30 @@ char fireYark = 2;
 
 unsigned char flgFrEff = 0;
 volatile unsigned char flgRueOn = 1;
-unsigned char flagFireEff = 0;
 unsigned char flgTmRefresh = 0;
 unsigned char flgLedEff = 0;
 
 
 extern unsigned char effBrightCoef;
-extern int confTm;
+extern volatile int confTm;
+extern unsigned char flgSetTm;//menu.c
 extern unsigned short int prevConfVals[];
 /*~~~~~~~~~~~~~~~~~~INTERRUPTS~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 //~~~~~~~~~~~~~~~~~~~~~~~Прерывание ПДП WSDMA~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//При пересылке последнего значения для WS в таймер в НЕкольцевом режиме
+//При пересылке последнего значения для WS в таймер в НЕкольцевом режиме:
+//весь буфер (данные + RES) передан - останавливаем таймер и DMA
 void DMA1_Channel6_IRQHandler(void)
 {
-	 stopWSDMA();
-	 DMA1->IFCR|=DMA_IFCR_CGIF6;
-}
-
-//Таймер для реализации протокола ws2812
-//После передачи всех данных - остановить таймер
-void TIM3_IRQHandler(void)
-{
-	static int counter = 0;
-	if(counter>=LED_HW_LENGTH)
-	{
-		stopTimer3();
-	startLightSensDMA();//Запускаем канал LightSens
-		flgWSTransfer = WS_TRANSFER_READY;//Передача закончена - можно передавать заново
-		counter = 0;
-	}
-	else
-		counter++;
-	TIM3->SR &= ~TIM_SR_UIF; //Clean UIF Flag
+	DMA1->IFCR = DMA_IFCR_CGIF6;
+	wsTransferComplete();
 }
 
 //Таймер эффектов
 void TIM1_UP_IRQHandler(void)
 {
 	//Если меняется какой либо индикатор в режиме fade
+	TIM1->SR = ~TIM_SR_UIF; //Clean UIF Flag сразу (rc_w0): событие во время обработки не потеряется
 	gdiEffHandle();
-	TIM1->SR &= ~TIM_SR_UIF; //Clean UIF Flag
 }
 
 //Основной цикл обновления индикаторов, за одно прерывание зажигается один индикатор
@@ -116,12 +101,8 @@ ______|
 */
 void TIM2_IRQHandler(void)
 {
-	//End configure
-	if(flagFireEff)
-		fireIndFireEffCycle();
-	else
-		fireIndCycle();
-	TIM2->SR &= ~TIM_SR_UIF; //Clean UIF Flag
+	TIM2->SR = ~TIM_SR_UIF; //Clean UIF Flag сразу (rc_w0): событие во время обработки не потеряется
+	fireIndCycle();
 }
 
 
@@ -145,25 +126,25 @@ void SysTick_Handler(void)
 }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //~~~~~~~~~~~~~~~~~~~Прерывания от кнопок~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//Правая для ин-17
+//PB0 (bt0): кнопка энкодера при ENC_BT0; в режиме CONF_BUTT - левая кнопка (меню)
 void EXTI0_IRQHandler(void)
 {
-	EXTI->PR|=0x01;
+	EXTI->PR = EXTI_PR_PR0;//Запись 1 сбрасывает только свою линию
 		if(!(bt0.buttBit&RG_BUTT_INPREG)){bt0.ipt = 1; bt0.st = 1;}
 }
-//Кнопка энкодера
+//PB1 (bt1): кнопка энкодера при ENC_BT1
 void EXTI1_IRQHandler(void)
 {
-		EXTI->PR|=0x02;
+		EXTI->PR = EXTI_PR_PR1;
 		if(!(bt1.buttBit&RG_BUTT_INPREG)){bt1.ipt = 1; bt1.st = 1;}
 
 
 }
-//Левая кнопка ин-17
+//PB2 (bt2): кнопка энкодера при ENC_BT2; в режиме CONF_BUTT - правая кнопка (значение)
 
 void EXTI2_IRQHandler(void)
 {
-	EXTI->PR|=0x04;
+	EXTI->PR = EXTI_PR_PR2;
 	//butt to down
 	if(!(bt2.buttBit&RG_BUTT_INPREG)){bt2.ipt = 1; bt2.st = 1;}
 //flgC=!flgC;
@@ -173,86 +154,76 @@ void EXTI2_IRQHandler(void)
 uint8_t counterEnco = 0;
 uint8_t oldEncoState = 3;
 uint8_t currEncoState = 0;
+
+#if (ENC_QSTEPS != 2) && (ENC_QSTEPS != 4)
+#error "ENC_QSTEPS must be 2 or 4 (see devconfdef.h)"
+#endif
+//Положение покоя энкодера, в котором засчитывается щелчок
+#if ENC_QSTEPS == 2
+#define ENC_REST(s) (((s) == 3) || ((s) == 0))
+#else
+#define ENC_REST(s) ((s) == 3)
+#endif
+
+//Декодер энкодера по таблице переходов кода Грея (вывод PB6 - бит 0, PB7 - бит 1).
+//Индекс: (старое состояние << 2) | новое. Один допустимый переход = +-1 (четверть периода),
+//пропущенные состояния и повторы = 0. Дребезг возвращает сумму в прежнее значение и не
+//дает ложных щелчков (+1 при 3->2 и -1 при обратном 2->3 компенсируются).
+//Прямой ход: 3->2->0->1->3, обратный: 3->1->0->2->3.
+static const signed char encDelta[16] = {
+	 0, +1, -1,  0,	//из 0
+	-1,  0,  0, +1,	//из 1
+	+1,  0,  0, -1,	//из 2
+	 0, -1, +1,  0	//из 3
+};
+static signed char encAcc = 0;//Накопленные переходы с последнего положения покоя
+
 //encoder exti
 void EXTI9_5_IRQHandler(void)
 {
-	//counterEnco++;
-	uint8_t newEncoState = 3;
-	if((EXTI->PR & 0x40) || (EXTI->PR & 0x80))
+	uint32_t pr = EXTI->PR & (EXTI_PR_PR6 | EXTI_PR_PR7);
+	if(pr)
 	{
-
+		uint8_t newEncoState;
+		//Сбрасываем только свои флаги (запись 1) ДО чтения выводов: фронт, пришедший во время
+		//обработки, вызовет новое прерывание, а не потеряется
+		EXTI->PR = pr;
 		newEncoState = getEncoderPinsValue();
 		currEncoState = newEncoState;
-		// Check transition
-		if(newEncoState == 3)
-		{
-			if(oldEncoState == 1){  if(encoderCounter >= encoderMaxValue)encoderCounter = 0; else encoderCounter++; }
-			else if(oldEncoState == 2){  if(encoderCounter == 0) encoderCounter = encoderMaxValue; else encoderCounter--; }
-		}
-
-		//if(encoderCounter>encoderMaxValue) encoderCounter = 0;
+		encAcc += encDelta[(oldEncoState << 2) | newEncoState];
 		oldEncoState = newEncoState;
-
-		if(EXTI->PR & 0x40) EXTI->PR |= 0x40;
-		if(EXTI->PR & 0x80) EXTI->PR |= 0x80;
-
-		/*if (oldEncoState == 3 && newEncoState == 2) {        // 3 -> 2 transition
+		//В положении покоя засчитываем щелчок. Порог на 1 меньше полного числа переходов:
+		//один пропущенный переход не теряет щелчок. Незавершенный поворот (|encAcc| меньше порога)
+		//отбрасывается.
+		if(ENC_REST(newEncoState))
+		{
+			if(encAcc >= ENC_QSTEPS-1)
+			{
 				if(encoderCounter >= encoderMaxValue)encoderCounter = 0; else encoderCounter++;
-			} else if (oldEncoState == 2 && newEncoState == 0) { // 2 -> 0 transition
-				if(encoderCounter >= encoderMaxValue)encoderCounter = 0; else encoderCounter++;
-			} else if (oldEncoState == 0 && newEncoState == 1) { // 0 -> 1 transition
-				if(encoderCounter >= encoderMaxValue)encoderCounter = 0; else encoderCounter++;
-			} else if (oldEncoState == 1 && newEncoState == 3) { // 1 -> 3 transition
-				if(encoderCounter >= encoderMaxValue)encoderCounter = 0; else encoderCounter++;
-			} else if (oldEncoState == 3 && newEncoState == 1) { // 3 -> 1 transition
+			}
+			else if(encAcc <= 1-ENC_QSTEPS)
+			{
 				if(encoderCounter == 0) encoderCounter = encoderMaxValue; else encoderCounter--;
-			} else if (oldEncoState == 1 && newEncoState == 0) { // 1 -> 0 transition
-				if(encoderCounter == 0) encoderCounter = encoderMaxValue; else encoderCounter--;
-			} else if (oldEncoState == 0 && newEncoState == 2) { // 0 -> 2 transition
-				if(encoderCounter == 0) encoderCounter = encoderMaxValue; else encoderCounter--;
-			} else if (oldEncoState == 2 && newEncoState == 3) { // 2 -> 3 transition
-				if(encoderCounter == 0) encoderCounter = encoderMaxValue; else encoderCounter--;
-			}*/
+			}
+			encAcc = 0;
+		}
 	}
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //~~~~~~~~~~~~~~~~~~~~Прерывание от RTC~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//Тактируется от ds3231
+//Тактируется от ds3231. Раз в секунду только запрашивает чтение времени; на лампы оно
+//выводится из главного цикла сразу после чтения (showTimeOnInds)
 void RTC_IRQHandler(void)
 {
-	static int tmpCounter = 0;
-	tmpCounter++;
-	//ledDbgTuggle();
-	//GPIOB->BRR|=0x00000002;
-	//NVIC_ClearPendingIRQ(RTC_IRQn);
 	if(RTC->CRL&RTC_CRL_SECF){ RTC->CRL&=~RTC_CRL_SECF;}
-//	if(RTC->CRL&RTC_CRL_OWF) RTC->CRL&=~RTC_CRL_OWF;
-//set2NumsToIndsEff(down,up);
-
 	if(flagConfMode){return;}
-
-	secFlag = 1;
-	if((flgRueOn == 5)&&(tmdt.sec == 59))flgR = 1;
-	else if(flgRueOn&&(tmdt.sec == 0)&&!(tmdt.min%rueInterv[flgRueOn]))flgR = 1;
-	//if(flgRueOn){rueTmr++;if(rueTmr == rueInterv[1])flgR = 1;rueTmr = 0;}
-
-	gdiEffSet(0,gdiVal[0]);
-	gdiEffSet(1,gdiVal[1]);
-	gdiEffSet(2,gdiVal[2]);
-	gdiEffSet(3,gdiVal[3]);
-  gdiEffSet(4,gdiVal[4]);
-	gdiEffSet(5,gdiVal[5]);
-
-
-
-
-	//GPIOB->BSRR|=0x00000002;
+	secFlag = TM_WAIT;
 }
 
 void I2C1_EV_IRQHandler(void)
 {
-	volatile uint16_t sr1,sr2;
+	volatile uint16_t sr1;
 
 
 	sr1 = I2C1->SR1;
@@ -261,7 +232,7 @@ void I2C1_EV_IRQHandler(void)
 		if(i2c.flg == I2C_NEED_TRM){ I2C1->DR = RTC_ADR|DS3231_WRITE;}
 		if(i2c.flg == I2C_NEED_RCV){ I2C1->DR = RTC_ADR|DS3231_READ;}
 	}
-	if(sr1& I2C_SR1_ADDR){ sr2 = I2C1->SR2; if(i2c.flg == I2C_NEED_TRM) I2C1->DR = RTC_SEC_ADR;return;	}
+	if(sr1& I2C_SR1_ADDR){ (void)I2C1->SR2; if(i2c.flg == I2C_NEED_TRM) I2C1->DR = RTC_SEC_ADR;return;	}
 
 	if(sr1 & I2C_SR1_BTF)
 	{
@@ -284,26 +255,6 @@ void I2C1_EV_IRQHandler(void)
 	//__enable_irq();
 }
 
-//with DMA
-/*void I2C1_EV_IRQHandler(void)
-{
-	volatile uint16_t sr1,sr2;
-	//__disable_irq();
-	sr1 = I2C1->SR1;
-	if(sr1& I2C_SR1_SB)//start ok/EV5
-	{
-		if(i2c.flg == I2C_NEED_TRM){ I2C1->DR = RTC_ADR|DS3231_WRITE;}
-		if(i2c.flg == I2C_NEED_RCV){ I2C1->DR = RTC_ADR|DS3231_READ;}
-	}
-	if(sr1& I2C_SR1_ADDR){ sr2 = I2C1->SR2; if(i2c.flg == I2C_NEED_TRM) I2C1->DR = RTC_SEC_ADR;__enable_irq();return;	}
-
-	if(sr1 & I2C_SR1_BTF)
-	{
-		if(i2c.flg == I2C_NEED_TRM){ i2c.flg = I2C_NEED_RCV; 	I2C1->CR1|=I2C_CR1_START;}//repeated start}
-	}
-	//__enable_irq();
-}
-*/
 //Get data from ds3231, find this in i2c.devData arr
 void DMA1_Channel7_IRQHandler(void)
 {
@@ -316,11 +267,35 @@ void DMA1_Channel7_IRQHandler(void)
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//fault HSE
+//Аварийный обработчик (сюда же попадают MemManage/BusFault/UsageFault и
+//необработанные прерывания через Default_Handler в startup).
+//Первым делом гасим лампы: иначе текущая лампа осталась бы гореть постоянным
+//током (без мультиплексирования), что вредно для катодов.
+void HardFault_Handler(void)
+{
+	__disable_irq();
+	GPIOB->BRR = 0xFC00;//Аноды PB10..PB15
+	GPIOA->BRR = 0x9FFC;//Катоды PA2..PA12, PA15
+#ifdef USE_IWDG
+	while(1) {}//Сторожевой таймер перезагрузит контроллер (можно посмотреть отладчиком)
+#else
+	NVIC_SystemReset();
+#endif
+}
+
+//fault HSE (прерывание системы контроля тактирования CSS)
 void NMI_Handler(void)
 {
-    /* ???????? ???? ??????? ???????? CSS */
-    if (RCC->CIR & RCC_CIR_CSSF) RCC->CIR|=RCC_CIR_CSSC;
+	if (RCC->CIR & RCC_CIR_CSSF)
+	{
+		RCC->CIR |= RCC_CIR_CSSC;
+		//Кварц отказал: аппаратно включился HSI 8 МГц без PLL, и все тайминги (ШИМ ламп, WS2812,
+		//I2C) стали неверными в 5 раз. Гасим лампы и перезагружаемся: при старте initSystemClock()
+		//не дождется HSE и запустит PLL от HSI на те же 40 МГц.
+		GPIOB->BRR = 0xFC00;//Аноды PB10..PB15
+		GPIOA->BRR = 0x9FFC;//Катоды PA2..PA12, PA15
+		NVIC_SystemReset();
+	}
 }
 //Переключение флага показа времени/даты
 void handleTmDtFlag()
@@ -359,32 +334,43 @@ void handleIndBlink(short int ind)
 	}
 }
 
+//Эффект перебора цифр: перебор идет по лампам слева направо, каждая следующая включается через
+//~333 мс. Этапы отслеживаются счетчиком stage и сравниваются через >=, поэтому, если главный
+//цикл пропустит нужную миллисекунду, эффект не зависнет (раньше сравнивали stmr == 333/667/...).
 void handleRue(char on)
 {
-		if(on){
-			if(stmr <10){currGdiEff[0] = 7; setIndCathRueS(0,gdiVal[0]);}
-			if(stmr == 333){currGdiEff[1] = 7; setIndCathRueS(1,gdiVal[1]);currGdiEff[0] = cge;}
-			if(stmr == 667){currGdiEff[2] = 7; setIndCathRueS(2,gdiVal[2]);currGdiEff[1] = cge;}
-			if(stmr == 999){currGdiEff[3] = 7; setIndCathRueS(3,gdiVal[3]); currGdiEff[2] = cge;}
-			if(stmr == 1332){currGdiEff[4] = 7; setIndCathRueS(4,gdiVal[4]); currGdiEff[3] = cge;}
-			if(stmr == 1665){currGdiEff[5] = 7; setIndCathRueS(5,gdiVal[5]);currGdiEff[4] = cge;}
-			if(stmr == 1999){ currGdiEff[5] = cge;flgR = 0; stmr = 0;}
-		}
+	static const unsigned short rueTime[6] = {333,667,999,1332,1665,1999};
+	static unsigned char stage = 0;//Номер лампы, на которой сейчас идет перебор
+	if(!on) return;
+	if(stmr < 10){currGdiEff[0] = 7; setIndCathRueS(0,gdiVal[0]);}
+	while((stage < 6) && (stmr >= rueTime[stage]))
+	{
+		//Перебор переходит на следующую лампу, текущая возвращается к обычному эффекту
+		if(stage < 5){currGdiEff[stage+1] = 7; setIndCathRueS(stage+1,gdiVal[stage+1]);}
+		currGdiEff[stage] = cge;
+		stage++;
+	}
+	if(stage >= 6){stage = 0; flgR = 0; stmr = 0;}
 }
+//Маятник запятых: положение (номер лампы) меняется каждые 200 мс по кругу 0,1,2,3,4,5,4,3,2,1.
+//Этап вычисляется по ctmr, а не ловится на точное значение: если главный цикл пропустит нужную
+//миллисекунду, запятая все равно переместится при следующем проходе.
 void handleComma()
 {
-	if(ctmr <20){gdi[0].br[10] = gdi[0].brAll;gdi[1].br[10] = 0;}
-	if(ctmr == 200){gdi[1].br[10] = gdi[1].brAll;gdi[0].br[10] = 0;}
-	if(ctmr == 400){gdi[2].br[10] = gdi[2].brAll;gdi[1].br[10] = 0;}
-	if(ctmr == 600){gdi[3].br[10] = gdi[3].brAll;gdi[2].br[10] = 0;}
-	if(ctmr == 800){gdi[4].br[10] = gdi[4].brAll;;gdi[3].br[10] = 0;}
-	if(ctmr == 1000){gdi[5].br[10] = gdi[5].brAll;;gdi[4].br[10] = 0;}
-	if(ctmr == 1200){gdi[4].br[10] = gdi[4].brAll;;gdi[5].br[10] = 0;}
-	if(ctmr == 1400){gdi[3].br[10] = gdi[3].brAll;;gdi[4].br[10] = 0;}
-	if(ctmr == 1600){gdi[2].br[10] = gdi[2].brAll;;gdi[3].br[10] = 0;}
-	if(ctmr ==1800){gdi[1].br[10] = gdi[1].brAll;;gdi[2].br[10] = 0;}
-	if(ctmr > 1995){ctmr = 0;}
-	//if(ctmr == 990){gdi[0].zptR = 0; gdi[1].zptR = 50;}
+	static const unsigned char commaPos[10] = {0,1,2,3,4,5,4,3,2,1};
+	static unsigned char lastStep = 0xFF;
+	unsigned int t = ctmr;
+	unsigned char step;
+	if(t > 1995){ ctmr = 0; t = 0; }
+	step = t/200;//0..9
+	//В первые 20 мс цикла положение подтверждается на каждом проходе (эффект перебора
+	//цифр может погасить запятую, см. cathRue)
+	if((step != lastStep) || (t < 20))
+	{
+		onIndComma(commaPos[step]);
+		offIndComma(commaPos[(step+9)%10]);
+		lastStep = step;
+	}
 }
 void changeTmDt()
 {
@@ -423,18 +409,6 @@ void changeTmDt()
 
 void handleTickEvs()
 {
-/*static int cntr = 0;
-	cntr++;
-	if(cntr>1000){secFlag = 1;
-
- gdiEffSet(0,gdiVal[0]);
-	 gdiEffSet(1,gdiVal[1]);
-	 gdiEffSet(2,gdiVal[2]);
-	 gdiEffSet(3,gdiVal[3]);
-   gdiEffSet(4,gdiVal[4]);
-	 gdiEffSet(5,gdiVal[5]);
-	cntr = 0;}*/
-//handleRue();
 
 	handleTmDtFlag();
 	if(indBl)handleIndBlink(indBl-1);
@@ -442,6 +416,29 @@ void handleTickEvs()
 	if(flgFrEff == FIRE_EFF1) handleIndFire();
 	if(flgFrEff == FIRE_EFF2) handleIndFireAll();
 
+}
+
+//Выводит на лампы свежепрочитанное время. Вызывается из главного цикла сразу после чтения DS3231.
+//Раньше это делало прерывание RTC со значениями, прочитанными на предыдущем тике, поэтому
+//индикация отставала от DS3231 на лишнюю секунду.
+//Запуск перебора цифр привязан к показываемому времени: он начинается, когда на лампах
+//появляется :00 (или :59 в режиме "раз в час").
+static void showTimeOnInds(void)
+{
+	unsigned char i;
+	if(flagConfMode) return;//В режиме настройки лампами управляет меню
+	if((flgRueOn == 5)&&(tmdt.sec == 59))flgR = 1;
+	else if(flgRueOn&&(tmdt.sec == 0)&&!(tmdt.min%rueInterv[flgRueOn]))flgR = 1;
+	for(i = 0; i < 6; i++) gdiEffSet(i, gdiVal[i]);
+}
+
+//Чтение времени завершено (или прервано по таймауту). Если за время чтения пришло новое
+//прерывание RTC (secFlag == TM_WAIT), его нельзя затирать - иначе будет пропущена секунда.
+static void secTickDone(void)
+{
+	IRQ_SAVE();
+	if(secFlag == TM_WORK) secFlag = TM_READY;
+	IRQ_RESTORE();
 }
 
 int main(void)
@@ -459,23 +456,23 @@ int main(void)
 	currGdiEff[4] = cge;
 	currGdiEff[5] = cge;
 	sysInit();//Инициализация переферии
-	initConfig();//Инициализация стартовых параметров
+	oldEncoState = getEncoderPinsValue();//Энкодер может стоять в положении 00
+	initConfig();//Заводские настройки (в т.ч. подсветка: цвет 362, яркость 0)
+	settingsLoad();//Сохраненные во flash настройки поверх заводских (если есть)
 	initButtons(&bt0,&bt1,&bt2);
-	//confAllLedsColor(362);
-	confAllLedsBright(0);
-	setAllLedsBright(0);
-	setLedMode(LED_ONCE);
 	I2C1->CR1|=I2C_CR1_PE;
 //	startLightSensDMA();
 	//ds3231StartOsc();
 	//	i2c1Write(RTC_ADR,0x0e,&value,1);
 	NVIC_EnableIRQ(EXTI2_IRQn);
 		NVIC_EnableIRQ(EXTI1_IRQn);
-	flagAutoYarkost = 1;
+	initIWDG();
 	while(1)
 	{
 		static unsigned int systm = 0;
 		unsigned char tick = 0;
+		feedIWDG();
+		wsTransferPoll();//Отложенный кадр WS2812 (см. startWsTransfer)
 		//flagAutoYarkost = 0;
 		//set2NumsToIndsEff(bt2.dn,bt2.up);
 		 ////setHw2NumsToInds(oldEncoState,counterEnco);
@@ -487,9 +484,13 @@ int main(void)
 			ledDbgTuggle();
 			i2c.rcvRdy = 0; i2c.flg = I2C_FREE;
 			timeFromHw(i2c.devData); dateFromHw(i2c.devData+3);
-			secFlag = TM_READY;
+			secTickDone();
 			changeTmDt();
+			showTimeOnInds();
 		}
+		//Фоновое чтение DS3231 не завершилось (NACK/помеха/зависшая шина):
+		//I2C перезапущен, разрешаем новое чтение по следующему прерыванию RTC
+		if(i2cCheckTimeout()) secTickDone();
 		//ловим системный тик
 		if(systm!=sysCounter){systm = sysCounter;tick = 1;}
 		//Запуск приема времени
@@ -505,14 +506,28 @@ int main(void)
 			flgLedEff = 0;
 		}
 		//Польз. интерфейс
-		handleUI(be);//ENCODER CON
-		//handleUIButt(&bt0,&bt2);
+#ifdef CONF_BUTT_01
+    handleUIButt(&bt0, &bt1);
+#elif defined(CONF_BUTT_02)
+    handleUIButt(&bt0, &bt2);
+#elif defined(CONF_BUTT_10)
+    handleUIButt(&bt1, &bt0);
+#elif defined(CONF_BUTT_12)
+    handleUIButt(&bt1, &bt2);
+#elif defined(CONF_BUTT_20)
+    handleUIButt(&bt2, &bt0);
+#elif defined(CONF_BUTT_21)
+    handleUIButt(&bt2, &bt1);
+#else
+	handleUI(be);//Энкодер с кнопкой
+#endif
 		//Автояркость
 		if(flagAutoYarkost){autoBright();}
 		//Выход из режима настройки по таймауту
 	  if(confTm>CONF_LIFETIME)//ENCODER CONF
 		{
 			confTm = 0;flagTmDtConf = CONF_NO_VALUE;
+				flgSetTm = 0;//Неподтвержденные секунды отбрасываем: к моменту таймаута они устарели
 			flagConfMode = CONF_MODE_OFF;indBl = 0;
 			flgFrEff = prevConfVals[CONF_GD_FE];
 		}
@@ -522,5 +537,6 @@ int main(void)
 
 		handleRue(flgR);
 		if(flgC&&(!flagConfMode))handleComma();
+		settingsPoll();//Сохранение изменившихся настроек во flash
 	}
 }

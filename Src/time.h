@@ -10,7 +10,6 @@
 #define MAX_DAY_VAL 31
 //Задержка показа даты и времени
 #define DELAY_DT SHOW_DATE_SEC*SYSTMR_FREQ
-#define DELAY_TM SHOW_TIME_SEC*SYSTMR_FREQ
 #define TIME_BUFF_SZ 7
 #define TM_WORK 2
 #define TM_READY 0
@@ -27,19 +26,14 @@ struct timeNDate
 	char month;
 	short int year;
 };	
-struct Temp
-{
-	char temph;
-	char templ;
-};
 void timeTick(void);
-void refreshTime(void);
 void timeToHw(unsigned char* hwBuff);
 void timeFromHw(unsigned char* hwBuff);
 void dateToHw(unsigned char* hwBuff);
 void dateFromHw(unsigned char* hwBuff);
-void getTemp(struct Temp *t);
-void refrTimeNDate(void);
 void setTime(int h, int m, int s);
 void setDate(int d, int m, int y);
+void setTimeHour(int h);
+void setTimeMinSec(int m, int s);
+void setTimeSec(int s);
 #endif //TIME_H

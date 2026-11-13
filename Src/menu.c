@@ -62,7 +62,7 @@
 extern unsigned short int encoderCounter;
 extern unsigned short encoderMaxValue;
 //Включает режим конфигурации
-extern char effBrightCoef;
+extern unsigned char effBrightCoef;
 unsigned char prevEffBright;
 extern volatile char flgLongButt;
 extern char flgShow;
@@ -92,7 +92,7 @@ unsigned char ledEffType= 0;
 extern volatile unsigned char gdiVal[6];	
 extern unsigned short int colors[WS_ENCO_VAL];
 	//Время ожидания отклика при настройке
-int confTm = 0;
+volatile int confTm = 0;
 
 //Количество значений
 const unsigned short int confValMax[MENU_COUNT_VAL] = {
@@ -150,7 +150,7 @@ const unsigned short int confValMax[MENU_COUNT_VAL] = {
 	gdiVal[1] = tmdt.hour%10;
 	setIndCathFade(0,gdiVal[0]);
 	setIndCathFade(1,gdiVal[1]);
-	if(flgSetTm)setTime(tmdt.hour,tmdt.min,tmdt.sec); flgSetTm = 0;
+	if(flgSetTm){ setTimeHour(tmdt.hour); flgSetTm = 0; }
 	//setIndCathFade(2,tmdt.min/10);
 	//setIndCathFade(3,tmdt.min%10);
 	//setIndCathFade(4,tmdt.sec/10);
@@ -170,7 +170,7 @@ const unsigned short int confValMax[MENU_COUNT_VAL] = {
 	gdiVal[3] = tmdt.min%10;
 	setIndCathFade(2,gdiVal[2]);
 	setIndCathFade(3,gdiVal[3]);
-	if(flgSetTm){setTime(tmdt.hour,tmdt.min,tmdt.sec); flgSetTm = 0;}
+	if(flgSetTm){setTimeMinSec(tmdt.min,tmdt.sec); flgSetTm = 0;}
 }
 
  void confSetSec(unsigned short int currValue)
@@ -287,12 +287,14 @@ void confAllLedsBright(unsigned short int currValue)
  void confLedColor(unsigned short int currValue, unsigned char ledInd)
 {
 	setLedColor(ledInd,colors[currValue]);
+	prevConfVals[CONF_LC_1+ledInd] = currValue;
 	if(ledMode == LED_ONCE)startWsTransfer();
 }
 
  void confLedBright(unsigned short int currValue,unsigned char led)
 {	
 	setLedBright(led,currValue);
+	prevConfVals[CONF_LB_1+led] = currValue;
 	if(ledMode == LED_ONCE)startWsTransfer();
 }
  void confSecType(unsigned short int currValue){flagSecType = (char)currValue; prevConfVals[CONF_SEC_TYPE] = currValue; }
@@ -347,6 +349,10 @@ void confAllLedsBright(unsigned short int currValue)
 	if((punkt>CONF_DT_Y)&&(flagConfMode == CONF_MODE_ON)) set2NumsToIndsEff(punkt,val);
 }
 
+//Заводские значения подсветки
+#define COLOR_IDX_GREEN 120	//Индекс зеленого в таблице colors[] (оттенок 120 градусов)
+#define FACTORY_COLOR 362	//Эффект "радуга справа налево" (WS_ENCOCOLOR_VAL + LED_RNB_RL)
+
 void initConfVals(void)
 {
 	prevConfVals[CONF_GD_Y] = yarkAll;
@@ -358,13 +364,13 @@ void initConfVals(void)
 	prevConfVals[CONF_DT_D] = 7;
 	prevConfVals[CONF_DT_M] = 8;
 	prevConfVals[CONF_DT_Y] = 9;
-	prevConfVals[CONF_LC_ALL] = WS_GREEN;
-	prevConfVals[CONF_LC_1] = WS_GREEN;
-	prevConfVals[CONF_LC_2] = WS_GREEN;
-	prevConfVals[CONF_LC_3] = WS_GREEN;
-	prevConfVals[CONF_LC_4] = WS_GREEN;
-	prevConfVals[CONF_LC_5] = WS_GREEN;
-	prevConfVals[CONF_LC_6] = WS_GREEN;
+	prevConfVals[CONF_LC_ALL] = FACTORY_COLOR;
+	prevConfVals[CONF_LC_1] = COLOR_IDX_GREEN;
+	prevConfVals[CONF_LC_2] = COLOR_IDX_GREEN;
+	prevConfVals[CONF_LC_3] = COLOR_IDX_GREEN;
+	prevConfVals[CONF_LC_4] = COLOR_IDX_GREEN;
+	prevConfVals[CONF_LC_5] = COLOR_IDX_GREEN;
+	prevConfVals[CONF_LC_6] = COLOR_IDX_GREEN;
 	prevConfVals[CONF_LB_ALL] = 0;
 	prevConfVals[CONF_LB_1] = 0;
 	prevConfVals[CONF_LB_2] = 0;
@@ -374,6 +380,7 @@ void initConfVals(void)
 	prevConfVals[CONF_LB_6] = 0;
 	prevConfVals[CONF_SEC_TYPE] = flagSecType;
 	prevConfVals[CONF_GD_RUE] = 1;
+	prevConfVals[CONF_GD_COMMA] = flgC;//Маятник запятых включен с запуска (main)
 	encoderMaxValue = 121;
 	encoderCounter = 30;
 	prevEffBright = 0;
@@ -398,142 +405,253 @@ void initConfig(void)
 	setAllLedsSat(100);
 	startWsTransfer();
 	initConfVals();
+	//Заводская подсветка: эффект "радуга справа налево", яркость 0 (выключена)
+	confAllLedsColor(FACTORY_COLOR);
+	confAllLedsBright(0);
+}
+
+//~~~~~~~~~~~~~~~~~ Сохранение настроек: снимок и восстановление ~~~~~~~~~~~~~~~~~
+//Состав и порядок значений задают формат записи во flash (settings.c). При изменении состава
+//или порядка нужно увеличить SET_VERSION в settings.c. Время и дату не сохраняем: их хранит DS3231.
+enum {
+	SV_GD_Y, SV_GD_EFF,
+	SV_LC_ALL, SV_LC_1, SV_LC_2, SV_LC_3, SV_LC_4, SV_LC_5, SV_LC_6,
+	SV_LB_ALL, SV_LB_1, SV_LB_2, SV_LB_3, SV_LB_4, SV_LB_5, SV_LB_6,
+	SV_SEC_TYPE, SV_GD_FE, SV_GD_RUE, SV_GD_COMMA, SV_DATA_INTERV,
+	SV_EFF_BRIGHT,//Яркость эффектов огня и угля (prevEffBright)
+	SV_COUNT
+};
+_Static_assert(SV_COUNT == CONF_SAVED_COUNT, "CONF_SAVED_COUNT (menu.h) не совпадает с числом SV_*");
+
+//Пункт меню для каждого значения (кроме SV_EFF_BRIGHT)
+static const unsigned char savedItem[SV_EFF_BRIGHT] = {
+	CONF_GD_Y, CONF_GD_EFF,
+	CONF_LC_ALL, CONF_LC_1, CONF_LC_2, CONF_LC_3, CONF_LC_4, CONF_LC_5, CONF_LC_6,
+	CONF_LB_ALL, CONF_LB_1, CONF_LB_2, CONF_LB_3, CONF_LB_4, CONF_LB_5, CONF_LB_6,
+	CONF_SEC_TYPE, CONF_GD_FE, CONF_GD_RUE, CONF_GD_COMMA, CONF_DATA_INTERV
+};
+
+//Максимально допустимое значение (включительно)
+static unsigned short savedMax(unsigned char i)
+{
+	if(i == SV_EFF_BRIGHT) return MAX_EFF_BRIGHT;
+	if(i == SV_GD_EFF) return confValMax[CONF_GD_EFF]-1;//confValMax - число эффектов
+	return confValMax[savedItem[i]];
+}
+
+//Текущие сохраняемые значения
+void confSnapshot(unsigned short* out)
+{
+	unsigned char i;
+	for(i = 0; i < SV_EFF_BRIGHT; i++) out[i] = prevConfVals[savedItem[i]];
+	out[SV_EFF_BRIGHT] = prevEffBright;
+}
+
+//Применение сохраненных значений поверх заводских. Возвращает 0 и ничего не меняет, если
+//значения недопустимы (повреждена запись, другая версия прошивки).
+unsigned char confRestore(const unsigned short* v)
+{
+	unsigned char i;
+	for(i = 0; i < SV_COUNT; i++)
+		if(v[i] > savedMax(i)) return 0;
+
+	//Яркость ламп: L_MAX_YARK - автоматическая (по датчику освещенности), иначе постоянная
+	if(v[SV_GD_Y] >= L_MAX_YARK) flagAutoYarkost = 1;
+	else { flagAutoYarkost = 0; setGdiBrightAll(v[SV_GD_Y]); }
+	prevConfVals[CONF_GD_Y] = v[SV_GD_Y];
+	//Эффект смены цифр
+	confSetGdiEff(v[SV_GD_EFF]);
+	prevConfVals[CONF_GD_EFF] = v[SV_GD_EFF];
+	//Подсветка: общий цвет (он же выбирает эффект; заодно выставляет яркость 7) и общая яркость...
+	confAllLedsColor(v[SV_LC_ALL]);
+	confAllLedsBright((ledEffType > LED_RNB_ALL) ? v[SV_EFF_BRIGHT] : v[SV_LB_ALL]);
+	//...затем индивидуальные цвета и яркости (при эффекте они не используются). Общие функции
+	//перезаписывают prevConfVals общими значениями, поэтому сохраненные записываются после них.
+	for(i = 0; i < 6; i++)
+	{
+		if(ledEffType == 0)
+		{
+			confLedColor(v[SV_LC_1+i],i);
+			confLedBright(v[SV_LB_1+i],i);
+		}
+		prevConfVals[CONF_LC_1+i] = v[SV_LC_1+i];
+		prevConfVals[CONF_LB_1+i] = v[SV_LB_1+i];
+	}
+	prevConfVals[CONF_LC_ALL] = v[SV_LC_ALL];
+	prevConfVals[CONF_LB_ALL] = v[SV_LB_ALL];
+	prevEffBright = v[SV_EFF_BRIGHT];
+	//Остальное
+	confSecType(v[SV_SEC_TYPE]);
+	confSetGdiFire(v[SV_GD_FE]);
+	confRueEff(v[SV_GD_RUE]);
+	confCommaEff(v[SV_GD_COMMA]);
+	confDataInterv(v[SV_DATA_INTERV]);
+	return 1;
 }	
 
- void confBButt(char bLeft, char bRight)
+//~~~~~~~~~~~~~~~~~ Общая логика меню для энкодера и для двух кнопок ~~~~~~~~~~~~~~~~~
+//Яркость подсветки при эффектах огня и угля (ledEffType > LED_RNB_ALL) - это "яркость эффекта":
+//значение хранится в prevEffBright, диапазон 0..MAX_EFF_BRIGHT
+static unsigned char itemIsEffBright(unsigned char item)
 {
-	static char menuFlag = 0;
-	char flagAction = 0;
+	return (item == CONF_LB_ALL) && (ledEffType > LED_RNB_ALL);
+}
 
-	//Обрабатываем нажатия не в режиме меню
+//Текущее значение пункта меню
+static unsigned short itemValue(unsigned char item)
+{
+	return itemIsEffBright(item) ? prevEffBright : prevConfVals[item];
+}
+
+//Изменение значения пункта на +-1 по кругу с немедленным применением. Вне меню так меняются
+//яркость ламп (CONF_GD_Y), яркость подсветки (CONF_LB_ALL) и эффект смены цифр (CONF_GD_EFF)
+static void stepItem(unsigned char item, signed char delta)
+{
+	int max, value;
+	if(itemIsEffBright(item)) max = MAX_EFF_BRIGHT;
+	else if(item == CONF_GD_EFF) max = confValMax[item]-1;//confValMax - число эффектов
+	else max = confValMax[item];
+	value = itemValue(item)+delta;
+	if(value>max) value = 0;
+	else if(value<0) value = max;
+	swMenu(item,value);
+	prevConfVals[item] = value;//Сохраняем состояние
+}
+
+//Показать дату вместо времени (на DELAY_DT, затем handleTmDtFlag вернет время)
+static void showDate(void)
+{
+	gdiVal[0] = tmdt.day/10; gdiVal[1] = tmdt.day%10;
+	gdiVal[2] = tmdt.month/10; gdiVal[3] = tmdt.month%10;
+	gdiVal[4] = tmdt.year/10; gdiVal[5] = tmdt.year%10;
+	flgShow = FLG_SHOW_DT;
+}
+
+//Вход в режим настройки. Возвращает первый пункт - часы
+static unsigned char menuEnter(void)
+{
+	flagConfMode = CONF_MODE_ON;
+	setSecView(SEC_CATHODE);
+	flgFrEff = FIRE_EFF_OFF;
+	return CONF_TM_H;
+}
+
+//Переход к следующему пункту меню. Возвращает его номер, MENU_COUNT_VAL - если меню закончилось.
+static unsigned char menuNextItem(unsigned char item)
+{
+	//При уходе с секунд записываем их в DS3231 (часы и минуты записываются сразу при изменении)
+	if((item == CONF_TM_S)&&flgSetTm){setTimeSec(tmdt.sec); flgSetTm = 0;}
+	//При уходе с года сбрасываем мигание индикаторов
+	if(item == CONF_DT_Y)
+	{
+		if(flgSetDt){ setDate(tmdt.day,tmdt.month,tmdt.year); flgSetDt = 0; }
+		indBl = 0; flagTmDtConf = CONF_NO_VALUE;
+	}
+	//Если включен эффект подсветки, индивидуальные цвета и яркости ламп пропускаем
+	if(ledEffType && ((item == CONF_LC_ALL)||(item == CONF_LB_ALL))) return item+7;
+	return item+1;
+}
+
+//Выход из режима настройки после последнего пункта (по таймауту выходит main)
+static void menuExit(void)
+{
+	flagConfMode = CONF_MODE_OFF;
+	flgFrEff = prevConfVals[CONF_GD_FE];
+}
+
+//Управление двумя кнопками (CONF_BUTT). bLeft - кнопка на PB0 (bt0), bRight - на PB2 (bt2).
+//Вне меню:
+//  правая: короткое - яркость ламп +1, двойное - эффект смены цифр +1, долгое - вход в меню
+//  левая:  короткое - яркость подсветки +1, двойное - показать дату
+//В меню:
+//  левая:  короткое - следующий пункт
+//  правая: короткое - значение +1, двойное - значение -1 (по кругу)
+//Выход из меню - после последнего пункта или по таймауту (main.c)
+void confBButt(char bLeft, char bRight)
+{
+	static unsigned char menuItem = CONF_TM_H;
+
 	if(flagConfMode == CONF_MODE_OFF)
 	{
 		switch(bRight)
 		{
-			case BUTT_SHORTCLICK:{menuFlag = CONF_GD_Y;flagAction = 1;break;}
-			case BUTT_DOUBLECLICK:{menuFlag = CONF_GD_EFF;flagAction = 1;break;}
-			case BUTT_LONGCLICK_P:{menuFlag = CONF_LB_ALL;flagAction = 1;break;}
-			case BUTT_LONGCLICK:{menuFlag = CONF_TM_H; flagConfMode = CONF_MODE_ON;break;}
-			default:break;
-		}
-		
-		switch(bLeft)
-		{
-			//Яркость  индикаторов
-			//case BUTT_SHORTCLICK:{menuFlag = CONF_GD_RVE;flagAction = 1;break;}
-			case BUTT_DOUBLECLICK:{break;}
-			case BUTT_LONGCLICK:{break;}
-			default:break;
-		}	
-	}
-	
-	//Нажатия в режиме меню
-	if(flagConfMode == CONF_MODE_ON)
-	{
-		confTm = 0;
-		//Нажатие на левую кнопку - переход к следующему пункту меню
-		if(bLeft == BUTT_SHORTCLICK)
-		{
-			menuFlag++;
-			if(menuFlag>=MENU_COUNT_VAL)
+			case BUTT_SHORTCLICK:{stepItem(CONF_GD_Y,1);break;}
+			case BUTT_DOUBLECLICK:{stepItem(CONF_GD_EFF,1);break;}
+			case BUTT_LONGCLICK:
 			{
-				menuFlag = CONF_GD_Y;
-				flagConfMode = CONF_MODE_OFF;
+				menuItem = menuEnter();
+				swMenu(menuItem,prevConfVals[menuItem]);//Показываем первый пункт (часы)
 				return;
 			}
-			swMenu(menuFlag,prevConfVals[menuFlag]);
+			default:break;
+		}
+		switch(bLeft)
+		{
+			case BUTT_SHORTCLICK:{stepItem(CONF_LB_ALL,1);break;}
+			case BUTT_DOUBLECLICK:{showDate();break;}
+			default:break;
+		}
+		return;
+	}
+
+	//Режим меню: любое нажатие продлевает время ожидания
+	confTm = 0;
+	if(bLeft == BUTT_SHORTCLICK)
+	{
+		menuItem = menuNextItem(menuItem);
+		if(menuItem>=MENU_COUNT_VAL)
+		{
+			menuExit();
 			return;
 		}
-		//Нажатие на правую кнопку - изменение текущего параметра
-		if(bRight == BUTT_SHORTCLICK){flagAction = 1;}
+		swMenu(menuItem,itemValue(menuItem));
+		return;
 	}
-	
-	if(flagAction)
-	{
-		//Увеличиваем значение для текущего пункта, 
-		unsigned short int cVal = prevConfVals[menuFlag]+1;
-		if(cVal>confValMax[menuFlag])cVal = 0;//но не более чем максимум
-		//Изменяем пункт меню на соответствующее значение
-		swMenu(menuFlag,cVal);
-		prevConfVals[menuFlag] = cVal;//Сохраняем состояние
-	}
+	if(bRight == BUTT_SHORTCLICK) stepItem(menuItem,1);
+	else if(bRight == BUTT_DOUBLECLICK) stepItem(menuItem,-1);
 }
+
+//Управление энкодером с кнопкой (CONF_B_ENC).
+//bv - событие кнопки, ev - значение энкодера, sign - направление вращения (0 - не вращался).
+//Вне меню: вращение - яркость ламп, вращение с зажатой кнопкой - яркость подсветки,
+//короткое нажатие - эффект смены цифр, двойное - показать дату, долгое - вход в меню.
+//В меню: вращение меняет значение (энкодер привязан к текущему пункту), нажатие - следующий пункт.
 void confByEnc(unsigned char bv, unsigned short int ev, signed char sign)
 {
-	unsigned short menuVal = 0;
-	static unsigned short menuItem = 0;
-	
+	static unsigned char menuItem = 0;
+
 	if(flagConfMode == CONF_MODE_OFF)
 	{
 		//Обработка вращения энкодера вне режима меню
-		if(sign!=0)//Если было вращение энкодера
+		if(sign!=0)
 		{
-			
-			int value = 0;
-			if(!(RG_BUTT_INPREG&be->buttBit))//Если зажата кнопка
+			if(!(RG_BUTT_INPREG&be->buttBit))//Если зажата кнопка - подсветка, иначе - яркость ламп
 			{
 				clearButtState(be);
-			
 				menuItem = CONF_LB_ALL;
 			}
-			else 
-				menuItem = CONF_GD_Y;
-			if((ledEffType>LED_RNB_ALL)&&(menuItem == CONF_LB_ALL))
-			{
-				value = prevEffBright+sign; menuVal = value; 
-				if(value>MAX_EFF_BRIGHT) menuVal = 0; if(value<0)menuVal = MAX_EFF_BRIGHT;
-			}
 			else
-			{		
-				value = prevConfVals[menuItem]+sign;
-				menuVal = value;
-				if(value>confValMax[menuItem])menuVal = 0;
-				else if(value<0)menuVal = confValMax[menuItem];
-			}
-			swMenu(menuItem,menuVal);
-			prevConfVals[menuItem] = menuVal;
+				menuItem = CONF_GD_Y;
+			stepItem(menuItem,sign);
 			return;
 		}
-		
-		//Обработка кнопок вне режима меню
+
+		//Обработка кнопки вне режима меню
 		switch (bv)
 		{
-			case BUTT_SHORTCLICK:
-			{
-			
-				prevConfVals[CONF_GD_EFF] = prevConfVals[CONF_GD_EFF]+1;
-				if(prevConfVals[CONF_GD_EFF]>=confValMax[CONF_GD_EFF])
-					prevConfVals[CONF_GD_EFF] = 0;
-				swMenu(CONF_GD_EFF,prevConfVals[CONF_GD_EFF]);
-				return;
-			}
-			case BUTT_DOUBLECLICK:
-			{
-				/*prevConfVals[CONF_GD_FE] = prevConfVals[CONF_GD_FE]+1;
-				if(prevConfVals[CONF_GD_FE]>confValMax[CONF_GD_FE])
-					prevConfVals[CONF_GD_FE] = 0;
-				swMenu(CONF_GD_FE,prevConfVals[CONF_GD_FE]);*/
-				gdiVal[0] = tmdt.day/10; gdiVal[1] = tmdt.day%10;
-				gdiVal[2] = tmdt.month/10; gdiVal[3] = tmdt.month%10;
-				gdiVal[4] = tmdt.year/10; gdiVal[5] = tmdt.year%10;
-				flgShow = FLG_SHOW_DT;
-				return;
-			}
+			case BUTT_SHORTCLICK:{stepItem(CONF_GD_EFF,1);return;}
+			case BUTT_DOUBLECLICK:{showDate();return;}
 			case BUTT_LONGCLICK:
 			{
-				menuItem = CONF_TM_H; 
-				flagConfMode = CONF_MODE_ON;
-				setSecView(SEC_CATHODE);
-				flgFrEff = FIRE_EFF_OFF;
-				setEncVal(ev = prevConfVals[CONF_TM_H]);	
+				menuItem = menuEnter();
+				setEncVal(ev = prevConfVals[CONF_TM_H]);
 				setMaxEncVal(confValMax[CONF_TM_H]);
-				
 				break;
 			}
 			default:break;
 		}
 	}
-	
+
 	//Обработка режима меню
 	if(flagConfMode == CONF_MODE_ON)
 	{
@@ -541,164 +659,26 @@ void confByEnc(unsigned char bv, unsigned short int ev, signed char sign)
 		//Нажатие на кнопку - переход к следующему пункту меню
 		if(bv == BUTT_SHORTCLICK)
 		{
-			if((menuItem == CONF_TM_S)&&flgSetTm){setTime(tmdt.hour,tmdt.min,tmdt.sec); flgSetTm = 0;}//Установить время при выходе из режима установки времени
-			if(menuItem == CONF_DT_Y)
-			{
-				if(flgSetDt){ setDate(tmdt.day,tmdt.month,tmdt.year); flgSetDt = 0; }//Установить дату при выходе из режима установки даты
-				indBl = 0; flagTmDtConf = CONF_NO_VALUE; 
-			}
-			if((menuItem == CONF_LC_ALL)&&ledEffType)
-			{
-				menuItem+=7;
-				if(ledEffType>LED_RNB_ALL)
-				{
-					setEncVal(ev = prevEffBright);
-					setMaxEncVal(MAX_EFF_BRIGHT);
-					swMenu(menuItem,ev);
-					return;
-				}
-				
-			}
-			else if((menuItem == CONF_LB_ALL)&&ledEffType)
-			{
-				menuItem+=7;
-			}
-			else menuItem++;	
+			menuItem = menuNextItem(menuItem);
 			if(menuItem>=MENU_COUNT_VAL)
 			{
 				menuItem = CONF_GD_Y;
-				flagConfMode = CONF_MODE_OFF;
-				flgFrEff = prevConfVals[CONF_GD_FE];
-				setEncVal(ev = prevConfVals[menuItem]);	
+				menuExit();
+				setEncVal(ev = prevConfVals[menuItem]);
 				setMaxEncVal(confValMax[menuItem]);
 				return;
 			}
-			setEncVal(ev = prevConfVals[menuItem]);	
-		  setMaxEncVal(confValMax[menuItem]);
-		}	
-		if(bv||sign) swMenu(menuItem,ev);
-	}
-	
-}
-void confByEncM(unsigned char bv, unsigned short int ev, signed char sign)
-{
-		unsigned short menuVal = 0;
-	static unsigned short menuItem = 0;
-	static char flgMenuP = 0;
-	if(flagConfMode == CONF_MODE_OFF)
-	{
-		//Обработка вращения энкодера вне режима меню
-		if(sign!=0)//Если было вращение энкодера
-		{
-			int value = 0;
-			if(!(RG_BUTT_INPREG&BUTT_ENTER_PB1))//Если зажата кнопка
+			if(itemIsEffBright(menuItem))
 			{
-				clearButtState(&bt1);
-				flgLongButt = 1;
-				menuItem = CONF_LB_ALL;
-			}
-			else 
-				menuItem = CONF_GD_Y;
-					
-			if(ledEffType>LED_RNB_ALL)
-			{
-				value = prevEffBright+sign; menuVal = value; 
-				if(value>MAX_EFF_BRIGHT) menuVal = 0; if(value<0)menuVal = MAX_EFF_BRIGHT;
-			}
-			else
-			{
-				value = prevConfVals[menuItem]+sign;
-				menuVal = value;
-				if(value>confValMax[menuItem])menuVal = 0;
-				else if(value<0)menuVal = confValMax[menuItem];
-			}
-			swMenu(menuItem,menuVal);
-			prevConfVals[menuItem] = menuVal;
-			return;
-		}
-		
-		//Обработка кнопок вне режима меню
-		switch (bv)
-		{
-			case BUTT_SHORTCLICK:
-			{	
-				prevConfVals[CONF_GD_EFF] = prevConfVals[CONF_GD_EFF]+1;
-				if(prevConfVals[CONF_GD_EFF]>=confValMax[CONF_GD_EFF])
-					prevConfVals[CONF_GD_EFF] = 0;
-				swMenu(CONF_GD_EFF,prevConfVals[CONF_GD_EFF]);
-				return;
-			}
-			case BUTT_DOUBLECLICK:
-			{
-				/*prevConfVals[CONF_GD_FE] = prevConfVals[CONF_GD_FE]+1;
-				if(prevConfVals[CONF_GD_FE]>confValMax[CONF_GD_FE])
-					prevConfVals[CONF_GD_FE] = 0;
-				swMenu(CONF_GD_FE,prevConfVals[CONF_GD_FE]);*/
-				flgShow = FLG_SHOW_DT;
-				return;
-			}
-			case BUTT_LONGCLICK:
-			{
-				menuItem = CONF_TM_H; 
-				flagConfMode = CONF_MODE_ON;
-				flgFrEff = FIRE_EFF_OFF;
-				setEncVal(ev = 0);	
-				setMaxEncVal(23);
-				flgMenuP = 1;
-				break;
-			}
-			default:break;
-		}
-	}
-	
-	//Обработка режима меню
-	if(flagConfMode == CONF_MODE_ON)
-	{
-		confTm = 0;
-		if(bv == BUTT_LONGCLICK){ flgMenuP = 1; setEncVal(ev = menuItem); setMaxEncVal(23);}
-		//Если в основном меню
-		if(flgMenuP)
-		{
-			if(ev<CONF_TM_H) setEncVal(ev = CONF_TM_H);
-			set2NumsToIndsEff(0, ev);
-			if(bv == BUTT_SHORTCLICK)//Перейти к текущему пункту
-			{
-				menuItem = ev;
-				setEncVal(ev = prevConfVals[menuItem]);	
-				setMaxEncVal(confValMax[menuItem]);
+				setEncVal(ev = prevEffBright);
+				setMaxEncVal(MAX_EFF_BRIGHT);
 				swMenu(menuItem,ev);
-				flgMenuP = 0;	
-			}	
-			if(bv == BUTT_LONGCLICK){flgMenuP = 0; flagConfMode = CONF_MODE_OFF;}
-			return;
-		}
-		
-		//Нажатие на кнопку - переход к текущему пункту
-		if(bv == BUTT_SHORTCLICK)
-		{
-			if((menuItem == CONF_TM_S)&&flgSetTm){setTime(tmdt.hour,tmdt.min,tmdt.sec); flgSetTm = 0;}//Установить время при выходе из режима установки времени
-			if(menuItem == CONF_DT_Y)
-			{
-				if(flgSetDt){ setDate(tmdt.day,tmdt.month,tmdt.year); flgSetDt = 0; }//Установить дату при выходе из режима установки даты
-				indBl = 0; flagTmDtConf = CONF_NO_VALUE; 
-			}
-			if((menuItem == CONF_LC_ALL)&&ledEffType) menuItem+=7;
-			else menuItem++;	
-			if(menuItem>=MENU_COUNT_VAL)
-			{
-				menuItem = CONF_GD_Y;
-				flagConfMode = CONF_MODE_OFF;
-				flgFrEff = prevConfVals[CONF_GD_FE];
-				setEncVal(ev = prevConfVals[menuItem]);	
-				setMaxEncVal(confValMax[menuItem]);
 				return;
 			}
-			setEncVal(ev = prevConfVals[menuItem]);	
-		  setMaxEncVal(confValMax[menuItem]);
+			setEncVal(ev = prevConfVals[menuItem]);
+			setMaxEncVal(confValMax[menuItem]);
 		}
-		
-		if((bv||sign)&&(!flgMenuP))
-			swMenu(menuItem,ev);
+		if(bv||sign) swMenu(menuItem,ev);
 	}
 }
 //Обработка пользовательского интерфейса ввода
@@ -712,12 +692,10 @@ void handleUI(volatile struct Button* bt)
 	if(es||bs)confByEnc(bs,ev,es);
 
 }
-void handleUIButt(volatile struct Button* bt,  volatile struct Button* bt2 )
+//Обработка двух кнопок (CONF_BUTT): btLeft - "меню" (PB0), btRight - "значение" (PB2)
+void handleUIButt(volatile struct Button* btLeft, volatile struct Button* btRight)
 {
-
-	char bs = 0, bs2 = 0;
-	bs = handleButtInt(bt);
-	bs2 = handleButtInt(bt2);
-	if(bs||bs2)confBButt(bs,bs2);
-
+	char bsLeft = handleButtInt(btLeft);
+	char bsRight = handleButtInt(btRight);
+	if(bsLeft||bsRight)confBButt(bsLeft,bsRight);
 }

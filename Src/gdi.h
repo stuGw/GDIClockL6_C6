@@ -212,35 +212,6 @@
 #define LAMP_1 0x8000
 #endif
 
-#ifdef MODULE_IN14
-#define CATHODE_8 0x0040//k8
-#define CATHODE_0 0x0400//k0
-#define CATHODE_9 0x0100//k9
-#define CATHODE_5 0x0008//k5
-#define CATHODE_1 0x0800//k1
-#define CATHODE_7 0x0010//k7
-#define CATHODE_2 0x0200//k2
-#define CATHODE_3 0x0080//3
-#define CATHODE_4 0x0020//k4
-#define CATHODE_6 0x0004//k6
-#define ZPT_L 0x1000
-#endif
-
-#ifdef MODULE_IN8_DBG
-#define CATHODE_2 0x0040//kzz
-#define CATHODE_5 0x0010//k00
-#define CATHODE_8 0x0100//k99
-#define CATHODE_6 0x0008//k66
-#define CATHODE_9 0x0800//k22
-#define ZPT_L 0x0400//k88
-#define CATHODE_4 0x0200//k33
-#define CATHODE_3 0x0080//44
-#define CATHODE_1 0x0020//k55
-#define CATHODE_7 0x0004//k77
-#define CATHODE_0 0x1000
-#endif
-
-
 #ifdef MODULE_IN8_R
 #define CATHODE_2 0x8000//kzz
 #define CATHODE_5 0x0004//k00
@@ -376,7 +347,7 @@
 #define SEC_COMMA1 0x03
 #define SEC_COMMA2 0x02
 //Флаг для  плавной смены индикаторов
-extern unsigned short int flgFTsk;
+extern volatile unsigned short int flgFTsk;
 extern const unsigned char tskFArr[6];
 //Номер текущего эффекта
 extern unsigned char currGdiEff[];
@@ -406,11 +377,6 @@ extern const unsigned char in14CathsPos[];// = {1,0,2,4,6,8,9,7,5,3};
 
 //Индикаторы
 extern struct lamps gdi[];
-//Коэффициент для эффекта горения
-extern char fireBrightCoef;
-
-//Эффект горения
-void fireEffGdi(int sc);
 //Автоматическое получение значенияя ркости с датчика
 void autoBright(void);
 //Установка яркости для всех индикаторов
@@ -420,16 +386,11 @@ void setGdiBrightAll(unsigned char value);
 void initInds(void);
 //Зажигание индикатров в стандартном режиме
 void fireIndCycle(void);
-//Зажигание индикаторов в режиме эффекта горения
-void fireIndFireEffCycle(void);
 //ить на индикаторе 2 3х значных числа 
 void setHw2NumsToInds(unsigned int n1, unsigned int n2);
 void setHwNumToInds(unsigned int number);
-//Отобразить строку на индикаторах
-void setHwStringToInds(const char* str);
 
 
-void setHwValueToInd(unsigned char ind, unsigned char value, unsigned char yark);
 void onIndComma(unsigned char ind);//{ gdi[ind].br[10] = gdi[ind].brAll;}
  void offIndComma(unsigned char ind);// { gdi[ind].br[10] = 0; }
 void fireCurrInd(unsigned char currIndex);
@@ -439,15 +400,12 @@ void offCommas(void);
 
  void fireCurrIndCath(unsigned char ind, unsigned char cath);
 void offCurrIndCath(unsigned char ind, unsigned char cath);
- void setBrightAll(unsigned char value);
-unsigned char getPrevValue(unsigned char value);
 
 void set2NumsToIndsEff(unsigned int n1, unsigned int n2);
  void setIndCath(register unsigned char ind,register unsigned char cath);
  void setIndCathFade(register unsigned char ind,register unsigned char cath);
  void setIndCathRue(register unsigned char ind,register unsigned char cath);
  void setIndCathRueS(register unsigned char ind,register unsigned char cath);
- void setIndictorCathBright(unsigned char ind, unsigned char cath, unsigned char bright);
  void setIndCathTwoCaths(register unsigned char ind,register unsigned char cath);
 
  void cathTwoCaths(unsigned char ind);
@@ -464,15 +422,6 @@ extern void (*setIndCathEff[])(register unsigned char ind,register unsigned char
 extern void (*catFade[])(unsigned char ind);
 
 void gdiEffHandle(void);
-/*{
-	if(tmdt.sec == 0) cathRueS(0);
-		if(flgFTsk&FTSK_5) catFade[currGdiEff[5]](5);
-		if(flgFTsk&FTSK_4) catFade[currGdiEff[4]](4);
-		if(flgFTsk&FTSK_3) catFade[currGdiEff[3]](3);
-		if(flgFTsk&FTSK_2) catFade[currGdiEff[2]](2);
-		if(flgFTsk&FTSK_1) catFade[currGdiEff[1]](1);
-		if(flgFTsk&FTSK_0) catFade[currGdiEff[0]](0);
-}*/
 
 void gdiEffSet(unsigned char ind, unsigned char val);
 

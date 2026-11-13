@@ -16,8 +16,8 @@ startWSDMA();
 //Буфер сигналов протокола ws
 struct LedHwPack hwBuff;
 struct LedHwPackw hwBuffw;
-char effBrightCoef = 0;
-char brightAllLed = 0;
+unsigned char effBrightCoef = 0;
+unsigned char brightAllLed = 0;
 const unsigned char wsHw[2] = {WS_H0,WS_H1};
 const unsigned char hsvBright[10] = {0,10,20,30,40,50,60,70,80,90};//Яркость для HSV
 extern unsigned char ledEffType;
@@ -275,15 +275,6 @@ void setRGBColorHD(unsigned char led,unsigned short int rgb)
 	setHwRgbBr(led,ledRgbColor);
 #endif
 }
-void setRGBColor768All(unsigned short int rgb)
-{
-	int i = 0;
-	while(i<WS_LED_COUNT)
-	{
-		setRGBColor768(i,rgb);
-		i++;
-	}
-}
 void setRGBColorCh(unsigned char led, unsigned char r,unsigned char g, unsigned char b,unsigned char w)
 {
 	ledRgbColor[led].R = r;
@@ -312,15 +303,6 @@ void setRGBWhite(unsigned char led,unsigned char val)
 	#ifdef LED_RGBW
 	setHwRgbwBr(led,ledRgbColor);
 	#endif
-}
-void setRGBWhiteAll(unsigned char val)
-{
-	int i = 0;
-	while(i<WS_LED_COUNT)
-	{
-		setRGBWhite(i,val);
-		i++;
-	}
 }
 void setRGBBrightAll(unsigned char bright)
 {
@@ -373,6 +355,7 @@ void hsvToRgb(struct  RgbColor* rgb, struct HsvColor*  hsv)
             case 3:{r = vm;g = vd;b = hsv->V;break;}
             case 4:{r = vi;g = vm;b = hsv->V;break;}
             case 5:{r = hsv->V;g = vm;b = vd;break;}
+            default:{r = 0;g = 0;b = 0;break;}
         }
         rgb->R = (r/100)*255;
         rgb->G = (g/100)*255;
@@ -435,7 +418,8 @@ void setLedAutoBright(unsigned short int bright)
 		else
 		{
 			brStd = bright/3;
-			if(brStd<1)brStd = 1; if(brStd>21)brStd = 21;
+			if(brStd<1)brStd = 1;
+				if(brStd>21)brStd = 21;
 			if(brStd!=prevBrStd){ prevBrStd = brStd; setAllLedsBright(brStd); if(ledMode == LED_ONCE)startWsTransfer();}
 		}
 }
@@ -499,12 +483,12 @@ void setLedMode(unsigned char mode)
 		wsDmaTmOnce();
 	}
 }
-void onLedRainbow(unsigned char time,unsigned char rue, unsigned char rueDiff)
-{
-}
 
 void convertToCurrColorHD(unsigned short int val, struct RgbColor *rgb)
 {
+	//Последний цвет в таблице colors[] = 1536 (конец круга, тот же красный, что и 0).
+	//Раньше значения >= 1536 не попадали ни в одну ветку, и цвет не менялся.
+	if(val>1535) val = 1535;
 	
 	if(val<=255){rgb->R = 255; rgb->G = val; rgb->B = 0;}
 	if((val>255)&&(val<512)){rgb->R = 511-val; rgb->G = 255; rgb->B = 0;}
@@ -815,83 +799,6 @@ void ledEff(unsigned char eff)
 	if((eff<LED_FIRE_ALL)&&(brightAllLed>0))startWsTransfer();
 }
 
-/*	
-void ledRainbow(unsigned short int time,unsigned char rue, unsigned char rueDiff)
-{
-	//time - скорость изменения цвета
-	//hsv 0 -360
-	//rgb 0 - 767
-	static unsigned short int rnbwCntr = 0;
-	static unsigned short int color = 0;
-	unsigned short int maxColor = 359;
-	unsigned short int colors[6];
-	rnbwCntr++;
-	if(rnbwCntr>time)
-	{
-		switch (rue)
-		{
-			case LED_RNB_ALL: { setAllLedsColor(color); break;}
-			case LED_RNB_LR: 
-				{
-					colors[0] = color+rueDiff;
-					if(colors[0]>maxColor)colors[0] = colors[0]-maxColor;
-					setLedColor(0,colors[0]);
-					
-					colors[1] = color+rueDiff*2;
-					if(colors[1]>maxColor)colors[1] = colors[1]-maxColor;
-					setLedColor(1,colors[1]);
-					
-					colors[2] = color+rueDiff*3;
-					if(colors[2]>maxColor)colors[2] = colors[2]-maxColor;
-					setLedColor(2,colors[2]);
-					
-					colors[3] = color+rueDiff*4;
-					if(colors[3]>maxColor)colors[3] = colors[3]-maxColor;
-					setLedColor(3,colors[3]);
-					
-					colors[4] = color+rueDiff*5;
-					if(colors[4]>maxColor)colors[4] = colors[4]-maxColor;
-					setLedColor(4,colors[4]);
-					
-					colors[5] = color+rueDiff*6;
-					if(colors[5]>maxColor)colors[5] = colors[5]-maxColor;
-					setLedColor(5,colors[5]);
-					break;
-				}
-			case LED_RNB_RL:
-			{
-				colors[0] = color+rueDiff;
-					if(colors[0]>maxColor)colors[0] = colors[0]-maxColor;
-					setLedColor(5,colors[0]);
-					
-					colors[1] = color+rueDiff*2;
-					if(colors[1]>maxColor)colors[1] = colors[1]-maxColor;
-					setLedColor(4,colors[1]);
-					
-					colors[2] = color+rueDiff*3;
-					if(colors[2]>maxColor)colors[2] = colors[2]-maxColor;
-					setLedColor(3,colors[2]);
-					
-					colors[3] = color+rueDiff*4;
-					if(colors[3]>maxColor)colors[3] = colors[3]-maxColor;
-					setLedColor(2,colors[3]);
-					
-					colors[4] = color+rueDiff*5;
-					if(colors[4]>maxColor)colors[4] = colors[4]-maxColor;
-					setLedColor(1,colors[4]);
-					
-					colors[5] = color+rueDiff*6;
-					if(colors[5]>maxColor)colors[5] = colors[5]-maxColor;
-					setLedColor(0,colors[5]);
-				break;
-			}
-		}
-		color++;
-		if(color>=maxColor)color = 0;
-		rnbwCntr = 0;
-	}
-}
-*/
 
 
 

@@ -47,15 +47,20 @@ void timeToHw(unsigned char* hwBuff)
 }
 
 void timeFromHw(unsigned char* hwBuff)
-{		
-	tmdt.sec = (hwBuff[0]/16)*10+hwBuff[0]%16;	
-	tmdt.min = (hwBuff[1]/16)*10+hwBuff[1]%16;
-	tmdt.hour = (hwBuff[2]&0x0f)%10;
-	if(hwBuff[2]&RTC_HOUR_10) tmdt.hour+=10;
-	if(hwBuff[2]&RTC_HOUR_20) tmdt.hour+=20;
-	hwBuff[0] =0; hwBuff[1] =0; hwBuff[2] =0; 
-	
-	//I2C1->CR1&=~I2C_CR1_PE;
+{
+	unsigned char s,m,h;
+	s = (hwBuff[0]/16)*10+hwBuff[0]%16;
+	m = (hwBuff[1]/16)*10+hwBuff[1]%16;
+	h = (hwBuff[2]&0x0f)%10;
+	if(hwBuff[2]&RTC_HOUR_10) h+=10;
+	if(hwBuff[2]&RTC_HOUR_20) h+=20;
+	hwBuff[0] =0; hwBuff[1] =0; hwBuff[2] =0;
+	//tmdt читают прерывания RTC и TIM1 - обновляем время одним куском, без промежуточных значений
+	{
+		IRQ_SAVE();
+		tmdt.sec = s; tmdt.min = m; tmdt.hour = h;
+		IRQ_RESTORE();
+	}
 }
 
 void dateToHw(unsigned char* hwBuff)
@@ -74,18 +79,6 @@ void dateFromHw(unsigned char* hwBuff)
 	tmdt.year = (hwBuff[3]/16)*10+hwBuff[3]%16;
 }
 
-void getTemp(struct Temp *t)
-{
-	ds3231GetTemp((char*)t);
-}
-void refrTimeNDate()
-{
-	unsigned char tbuff[4];
-	ds3231GetTime(tbuff);
-	timeFromHw(tbuff);
-	ds3231GetDate(tbuff);
-	dateFromHw(tbuff);
-}
 
 void setTime(int h, int m, int s)
 {
@@ -104,4 +97,33 @@ void setDate(int d, int m, int y)
 	tmdt.year = y;
 	dateToHw(tbuff);
 	ds3231SetDate(tbuff);
+}
+
+//Запись в DS3231 только тех регистров, которые меняет пользователь.
+//В режиме настройки tmdt "заморожен" на моменте входа в меню, а DS3231 продолжает идти:
+//setTime() записал бы в часы устаревшие минуты/секунды и отмотал бы время назад.
+void setTimeHour(int h)
+{
+	unsigned char tbuff[3];
+	tmdt.hour = h;
+	timeToHw(tbuff);
+	i2c1Write(RTC_ADR,RTC_HR_ADR,&tbuff[2],1);
+}
+
+//Минуты вместе с секундами (при установке минут секунды обнуляются)
+void setTimeMinSec(int m, int s)
+{
+	unsigned char tbuff[3];
+	tmdt.min = m;
+	tmdt.sec = s;
+	timeToHw(tbuff);
+	i2c1Write(RTC_ADR,RTC_SEC_ADR,tbuff,2);
+}
+
+void setTimeSec(int s)
+{
+	unsigned char tbuff[3];
+	tmdt.sec = s;
+	timeToHw(tbuff);
+	i2c1Write(RTC_ADR,RTC_SEC_ADR,tbuff,1);
 }
