@@ -15,6 +15,15 @@
 #define TM_READY 0
 #define TM_WAIT 1
 
+//Число дней в месяце (год 0..99 = 2000..2099: високосный каждый четвертый). Для неверного месяца - 31.
+static inline unsigned char daysInMonth(unsigned char month, unsigned char year)
+{
+	static const unsigned char days[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
+	if((month < 1)||(month > 12)) return 31;
+	if((month == 2)&&((year % 4) == 0)) return 29;
+	return days[month-1];
+}
+
 struct timeNDate
 {
 	int millSecs;

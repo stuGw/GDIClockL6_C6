@@ -46,8 +46,10 @@ void gdiEffHandle(void)
 	if(tmdt.sec == 1) cathRueS(1); else if(flgFTsk&FTSK_1) catFade[currGdiEff[1]](1);
 	if(tmdt.sec == 2) cathRueS(2);else if(flgFTsk&FTSK_2) catFade[currGdiEff[2]](2);
 	if(tmdt.sec == 3) cathRueS(3);else if(flgFTsk&FTSK_3) catFade[currGdiEff[3]](3);
+#if GDI_COUNT == 6
 		if(flgFTsk&FTSK_5) catFade[currGdiEff[5]](5);
 		if(flgFTsk&FTSK_4) catFade[currGdiEff[4]](4);
+#endif
 		
 		
 		
@@ -103,8 +105,10 @@ void setGdiBrightAll(unsigned char value)
 {  
   gdi[0].brAll = value; gdi[1].brAll = value;
 	gdi[2].brAll = value; gdi[3].brAll = value;
+#if GDI_COUNT == 6
 	if((flagSecType == SEC_CATHODE)||(flgShow == 2)||(flagConfMode == 1)){gdi[4].brAll = value; gdi[5].brAll = value;}
 	else{ gdi[4].brAll = 0; gdi[5].brAll = 0;}
+#endif
 }
 
 void offCommas(void)
@@ -143,6 +147,13 @@ void setHwNumToInds(unsigned int number)
 
 void set2NumsToIndsEff(unsigned int n1, unsigned int n2)
 {
+#if GDI_COUNT == 4
+	//Часы без секунд: номер пункта (00..99) на лампах 0-1, значение (00..99) на лампах 2-3
+	gdiEffSet(0,(n1%100)/10);
+	gdiEffSet(1,n1%10);
+	gdiEffSet(2,(n2%100)/10);
+	gdiEffSet(3,n2%10);
+#else
 	unsigned int tmp1,tmp2;
 	tmp1 = n1/100;
 	tmp2 = n2/100;
@@ -152,6 +163,7 @@ void set2NumsToIndsEff(unsigned int n1, unsigned int n2)
 	gdiEffSet(3,tmp2);
 	gdiEffSet(4,(n2%100)/10);
 	gdiEffSet(5,(n2%10));
+#endif
 }
 
 void setHw2NumsToInds(unsigned int n1, unsigned int n2)
@@ -216,7 +228,7 @@ void fireIndCycle()
 	{
 		timerBright = 0;
 		currInd++;
-		if(currInd>5)currInd = 0;
+		if(currInd>=GDI_COUNT)currInd = 0;
 		setAnode(0x0000);
 	}
 }
@@ -622,6 +634,9 @@ void gdiEffSet(unsigned char ind, unsigned char val)
 
 void setSecView(unsigned char flg)
 {
+#if GDI_COUNT == 4
+	(void)flg;//Часы без секунд: ламп секунд нет
+#else
 	switch (flg)
 	{
 		case SEC_CATHODE:{gdi[4].brAll = gdi[0].brAll; gdi[5].brAll = gdi[0].brAll; break;}
@@ -634,4 +649,5 @@ void setSecView(unsigned char flg)
 		}
 		default: break;
 	}
+#endif
 }

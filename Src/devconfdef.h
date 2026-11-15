@@ -1,18 +1,33 @@
 #ifndef DEVCONFDEF_H
 #define DEVCONFDEF_H
 //Файл описывает параметры для различных типов часов
+//
+//Тип часов (4 или 6 ламп) задается выбором модуля ламп MODULE_* ниже, отдельный дефайн не нужен:
+//  - модули на 6 ламп (часы с секундами): MODULE_IN4, MODULE_IN8_SPB, MODULE_IN14_SPB и др.;
+//  - модули на 4 лампы (часы без секунд): MODULE_IN4_4, MODULE_IN12_4, MODULE_IN8_4, MODULE_IN14_4.
+//Число ламп GDI_COUNT (4 или 6) объявлено в каждом модуле в gdi.h вместе с разводкой анодов и катодов.
+//Особенности 4-ламповых часов:
+//  - в меню нет секунд и вида отображения секунд, год показывается как 20ГГ на всех лампах;
+//  - пункты меню 8..26: номер пункта на лампах 0-1, значение на лампах 2-3; цвет подсветки выбирается
+//    по индексу 0..89 (оттенок = индекс*4), у "цвета всех" еще 90..97 - эффекты подсветки;
+//  - маятник запятых и перебор цифр работают по 4 лампам;
+//  - подсветка и формат настроек во flash такие же, как у 6 ламп.
+//Для новой платы: добавить модуль в gdi.h (с GDI_COUNT и разводкой), раскомментировать его здесь и
+//добавить в проверку "ровно один модуль" ниже. Модули *_4 для IN12/IN8/IN14 пока с временной
+//разводкой, скопированной с 6-ламповых плат (см. комментарии в gdi.h).
 //Тип энкодера
 #define ENC_DEV_COEF 1
 //Число переходов состояния энкодера (четвертей периода) на один щелчок:
 //  4 - щелчок на полный период (в положении покоя на выводах всегда 11);
 //  2 - щелчок на полпериода (в покое поочередно 11 и 00, типично для EC11 на 30 щелчков/15 импульсов).
 //Если значение меняется на каждый второй щелчок - поставить 2, если сразу на 2 - поставить 4.
-#define ENC_QSTEPS 2
+//#define ENC_QSTEPS 2
 //alum bt1
 //in4 bt1
 //in12_6 bt2
-#define ENC_BT0
-//#define ENC_BT1
+//in14_4 bt1
+//#define ENC_BT0
+#define ENC_BT1
 //#define ENC_BT2
 
 
@@ -60,19 +75,18 @@
 //временные параметры WS2812 (TIM3), I2C и таймеры индикации (см. проверку в system.h)
 #define QUARZ_FREQ 8000000
 //Тип ламп (выбрать ровно один)
-//#define MODULE_IN4_4
-#define MODULE_IN4
-//#define MODULE_IN4_4DBG
+
+//#define MODULE_IN4
 //#define MODULE_IN8_SPB
 //#define MODULE_IN14_SPB
-//#define MODULE_IN8_R
-//#define MODULE_IN8_RN
-//#define MODULE_IN14_R
 //#define MODULE_IN17
-//#define MODULE_IN12Z_R
-//#define MODULE_IN14_SP
 //#define MODULE_ZM570M
 //#define MODULE_IN12_6
+//Модули на 4 лампы (без секунд)
+//#define MODULE_IN12_4
+//#define MODULE_IN4_4
+//#define MODULE_IN8_4
+#define MODULE_IN14_4
 //Время отображения даты (в секундах)
 #define SHOW_DATE_SEC 5
 
@@ -94,7 +108,8 @@
 #if (defined(MODULE_IN4_4) + defined(MODULE_IN4) + defined(MODULE_IN4_4DBG) + defined(MODULE_IN14_R) + \
 	defined(MODULE_IN14_SPB) + defined(MODULE_IN8_SPB) + defined(MODULE_ZM570M) + defined(MODULE_IN17) + \
 	defined(MODULE_IN12Z_R) + defined(MODULE_IN8_R) + \
-	defined(MODULE_IN8_RN) + defined(MODULE_IN12_6) + defined(MODULE_IN14_SP)) != 1
+	defined(MODULE_IN8_RN) + defined(MODULE_IN12_6) + defined(MODULE_IN14_SP) + \
+	defined(MODULE_IN12_4) + defined(MODULE_IN8_4) + defined(MODULE_IN14_4)) != 1
 #error "devconfdef.h: должен быть выбран ровно один тип ламп MODULE_*"
 #endif
 

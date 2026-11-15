@@ -37,6 +37,17 @@ const uint32_t* hwLedAdress = (uint32_t*)&hwBuff;
 #endif
 
 #define FR_CF_LED_CNT 62
+
+//Эффекты огня "все вместе" (ledFireAll, ledFireColdAll): уровень светодиода по положению -
+//0 - центр (желтее и ярче), 1 - середина, 2 - край (краснее и тусклее).
+//6 ламп: светодиоды 1..6 идут симметрично от краев к центру.
+//4 лампы: уровни задает модуль в gdi.h (LED_FIRE_LEVELS), т.к. светодиоды под лампами стоят по-разному;
+//светодиоды корпуса имеют цвет краев.
+#if GDI_COUNT == 4
+static const unsigned char fireLvl[6] = LED_FIRE_LEVELS;
+#else
+static const unsigned char fireLvl[6] = {2,1,0,0,1,2};
+#endif
 			
 unsigned short int colors[WS_ENCO_VAL] =
 {	
@@ -546,19 +557,22 @@ void ledFireAll()
 {
 	static unsigned short int fireCntr = 0;
 	static unsigned short int i = 0;
+	//Цвет по уровню: центр, середина, край
+	static const unsigned char fG[3] = {0x36,0x22,0x1e};
+	static const unsigned char fB[3] = {0x05,0x03,0x00};
 	if(fireCntr>=LED_FIRE_TM)
-	{	
-		
-		unsigned char c1 = 1,c2 = 2;
-		if(ledFArrBBr[effBrightCoef][i] == 1){c1 = 0; c2 = 0;}else {c1 = 1;c2 = 2;}
-		
-		setLedBright(0,ledFArrBBr[effBrightCoef][i]-c2); setRGBColorCh(0,0xff,0x1e,0x00,0);//setLedColor(0,ledFArrC[i]-8+100);
-		setLedBright(1,ledFArrBBr[effBrightCoef][i]-c1);setRGBColorCh(1,0xff,0x22,0x03,0);//setLedColor(1,ledFArrC[i]-4+100);
-		setLedBright(2,ledFArrBBr[effBrightCoef][i]); setRGBColorCh(2,0xff,0x36,0x05,0);//setLedColor(2,ledFArrC[i]+100);
-		setLedBright(3,ledFArrBBr[effBrightCoef][i]);setRGBColorCh(3,0xff,0x36,0x05,0);//setLedColor(3,ledFArrC[i]+100);
-		setLedBright(4,ledFArrBBr[effBrightCoef][i]-c1);setRGBColorCh(4,0xff,0x22,0x03,0);//setLedColor(4,ledFArrC[i]-4+100);
-		setLedBright(5,ledFArrBBr[effBrightCoef][i]-c2);setRGBColorCh(5,0xff,0x1e,0x00,0);//setLedColor(5,ledFArrC[i]-8+100);
-		
+	{
+		unsigned char dim[3] = {0,1,2};//Уменьшение яркости по уровню
+		unsigned char led;
+		if(ledFArrBBr[effBrightCoef][i] == 1){dim[1] = 0; dim[2] = 0;}
+
+		for(led = 0; led < 6; led++)
+		{
+			unsigned char lv = fireLvl[led];
+			setLedBright(led,ledFArrBBr[effBrightCoef][i]-dim[lv]);
+			setRGBColorCh(led,0xff,fG[lv],fB[lv],0);
+		}
+
 		i++;
 		if(i>=FR_CF_LED_CNT)i = 0;
 
@@ -628,18 +642,21 @@ void ledFireColdAll()
 {
 	static unsigned short int fireCntr = 0;
 	static unsigned short int i = 0;
+	//Сдвиг цвета по уровню: центр, середина, край
+	static const signed char fC[3] = {-20,10,20};
 	if(fireCntr>=LED_FIRE_TM)
 	{
-		unsigned char c1 = 1,c2 = 2;
-		if(ledFArrBBr[effBrightCoef][i] == 1){c1 = 0; c2 = 1;}else {c1 = 1;c2 = 2;}
-		
-		setLedBright(0,ledFArrBBr[effBrightCoef][i]-c2);setLedColor(0,ledFArrCC[i]+20+650);
-		setLedBright(1,ledFArrBBr[effBrightCoef][i]-c1);setLedColor(1,ledFArrCC[i]+10+650);
-		setLedBright(2,ledFArrBBr[effBrightCoef][i]);setLedColor(2,ledFArrCC[i]-20+650);
-		setLedBright(3,ledFArrBBr[effBrightCoef][i]);setLedColor(3,ledFArrCC[i]-20+650);
-		setLedBright(4,ledFArrBBr[effBrightCoef][i]-c1);setLedColor(4,ledFArrCC[i]+10+650);
-		setLedBright(5,ledFArrBBr[effBrightCoef][i]-c2);setLedColor(5,ledFArrCC[i]+20+650);
-		
+		unsigned char dim[3] = {0,1,2};//Уменьшение яркости по уровню
+		unsigned char led;
+		if(ledFArrBBr[effBrightCoef][i] == 1){dim[1] = 0; dim[2] = 1;}
+
+		for(led = 0; led < 6; led++)
+		{
+			unsigned char lv = fireLvl[led];
+			setLedBright(led,ledFArrBBr[effBrightCoef][i]-dim[lv]);
+			setLedColor(led,ledFArrCC[i]+fC[lv]+650);
+		}
+
 		i++;
 		if(i>=FR_CF_LED_CNT)i = 0;
 		fireCntr = 0;

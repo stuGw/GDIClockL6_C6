@@ -343,32 +343,41 @@ void handleRue(char on)
 	static unsigned char stage = 0;//Номер лампы, на которой сейчас идет перебор
 	if(!on) return;
 	if(stmr < 10){currGdiEff[0] = 7; setIndCathRueS(0,gdiVal[0]);}
-	while((stage < 6) && (stmr >= rueTime[stage]))
+	while((stage < GDI_COUNT) && (stmr >= rueTime[stage]))
 	{
 		//Перебор переходит на следующую лампу, текущая возвращается к обычному эффекту
-		if(stage < 5){currGdiEff[stage+1] = 7; setIndCathRueS(stage+1,gdiVal[stage+1]);}
+		if(stage < GDI_COUNT-1){currGdiEff[stage+1] = 7; setIndCathRueS(stage+1,gdiVal[stage+1]);}
 		currGdiEff[stage] = cge;
 		stage++;
 	}
-	if(stage >= 6){stage = 0; flgR = 0; stmr = 0;}
+	if(stage >= GDI_COUNT){stage = 0; flgR = 0; stmr = 0;}
 }
-//Маятник запятых: положение (номер лампы) меняется каждые 200 мс по кругу 0,1,2,3,4,5,4,3,2,1.
+//Маятник запятых: положение (номер лампы) меняется каждые 200 мс по кругу
+//0,1,2,3,4,5,4,3,2,1 (6 ламп) или 0,1,2,3,2,1 (4 лампы). Полный цикл всегда 2 с, поэтому проход
+//слева направо занимает 1 с и на 6, и на 4 лампах (шаг 200 мс при 6 лампах, ~333 мс при 4).
 //Этап вычисляется по ctmr, а не ловится на точное значение: если главный цикл пропустит нужную
 //миллисекунду, запятая все равно переместится при следующем проходе.
 void handleComma()
 {
+#if GDI_COUNT == 6
 	static const unsigned char commaPos[10] = {0,1,2,3,4,5,4,3,2,1};
+#else
+	static const unsigned char commaPos[6] = {0,1,2,3,2,1};
+#endif
+#define COMMA_STEPS ((unsigned char)(sizeof(commaPos)/sizeof(commaPos[0])))
+#define COMMA_PERIOD_MS 2000u
+#define COMMA_STEP_MS (COMMA_PERIOD_MS/COMMA_STEPS)
 	static unsigned char lastStep = 0xFF;
 	unsigned int t = ctmr;
 	unsigned char step;
-	if(t > 1995){ ctmr = 0; t = 0; }
-	step = t/200;//0..9
+	if(t > COMMA_PERIOD_MS-5){ ctmr = 0; t = 0; }
+	step = t/COMMA_STEP_MS;//0..COMMA_STEPS-1
 	//В первые 20 мс цикла положение подтверждается на каждом проходе (эффект перебора
 	//цифр может погасить запятую, см. cathRue)
 	if((step != lastStep) || (t < 20))
 	{
 		onIndComma(commaPos[step]);
-		offIndComma(commaPos[(step+9)%10]);
+		offIndComma(commaPos[(step+COMMA_STEPS-1)%COMMA_STEPS]);
 		lastStep = step;
 	}
 }
@@ -429,7 +438,7 @@ static void showTimeOnInds(void)
 	if(flagConfMode) return;//В режиме настройки лампами управляет меню
 	if((flgRueOn == 5)&&(tmdt.sec == 59))flgR = 1;
 	else if(flgRueOn&&(tmdt.sec == 0)&&!(tmdt.min%rueInterv[flgRueOn]))flgR = 1;
-	for(i = 0; i < 6; i++) gdiEffSet(i, gdiVal[i]);
+	for(i = 0; i < GDI_COUNT; i++) gdiEffSet(i, gdiVal[i]);
 }
 
 //Чтение времени завершено (или прервано по таймауту). Если за время чтения пришло новое

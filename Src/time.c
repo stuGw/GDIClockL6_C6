@@ -92,6 +92,11 @@ void setTime(int h, int m, int s)
 void setDate(int d, int m, int y)
 {
 	unsigned char tbuff[4];			
+	//Неверную дату (день или месяц 0, 31 февраля) в DS3231 не записываем
+	if(m < 1) m = 1;
+	if(m > 12) m = 12;
+	if(d < 1) d = 1;
+	if(d > daysInMonth(m,y)) d = daysInMonth(m,y);
 	tmdt.day = d;
 	tmdt.month = m;
 	tmdt.year = y;

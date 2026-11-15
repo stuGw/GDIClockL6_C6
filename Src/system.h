@@ -25,7 +25,7 @@
 #define SYSTMR_FREQ 1000
 #define SYS_TIMER_FREQ SYS_CORE_CLOCK/SYSTMR_FREQ-1			
 #define GDI_DISCRETE 66				
-#define GDI_COUNT 6						  	
+//GDI_COUNT (число ламп) задается модулем в gdi.h; здесь используется только в GDI_TIM_PSC, который раскрывается в system.c после gdi.h
 #define GDI_TIM_ARR 20
 #define GDI_TIM_PSC (SYS_CORE_CLOCK/(GDI_COUNT*L_MAX_YARK))/GDI_FREQ/GDI_TIM_ARR	
 

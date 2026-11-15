@@ -77,6 +77,10 @@ void confAllLedsBright(unsigned short int currValue);
  void confGdiRve(unsigned short int currValue);
  void swMenu(char punkt, unsigned short int val);
 void initConfVals(void);
+//Значение пункта меню <-> индекс, который показывают лампы и выбирает пользователь (на 4 лампах для цвета подсветки, см. menu.c)
+unsigned short confItemToUi(unsigned char item, unsigned short value);
+unsigned short confUiToItem(unsigned char item, unsigned short ui);
+unsigned short confItemUiMax(unsigned char item);
 //Сохранение настроек: снимок сохраняемых значений и их восстановление (формат - см. menu.c)
 #define CONF_SAVED_COUNT 22
 void confSnapshot(unsigned short* out);

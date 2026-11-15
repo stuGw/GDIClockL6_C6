@@ -326,7 +326,7 @@ void initEncoderGPIOEXTI()
 void initTimer2()
 {	
     RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;  // Enable TIM2 Periph clock
-    TIM2->PSC = GDI_TIM_PSC;//шаг ШИМ: 40 МГц/(PSC+1)/(ARR+1) = ~23.8 кГц; кадр 6 ламп x 61 шаг = ~65 Гц на лампу
+    TIM2->PSC = GDI_TIM_PSC;//шаг ШИМ: 40 МГц/(PSC+1)/(ARR+1) = ~23.8 кГц; кадр GDI_COUNT ламп x 61 шаг: PSC подбирается так, чтобы частота на лампу была ~65 Гц при 4 и при 6 лампах
     TIM2->ARR = GDI_TIM_ARR;
     TIM2->DIER |= TIM_DIER_UIE; // прерывание по переполнению
 } 

@@ -94,6 +94,13 @@ extern unsigned short int colors[WS_ENCO_VAL];
 	//Время ожидания отклика при настройке
 volatile int confTm = 0;
 
+//Номер пары мигающих ламп при настройке года (индекс первой лампы + 1, см. handleIndBlink)
+#if GDI_COUNT == 4
+#define IND_BL_YEAR 3//Год 20ГГ: мигают две правые лампы
+#else
+#define IND_BL_YEAR 5
+#endif
+
 //Количество значений
 const unsigned short int confValMax[MENU_COUNT_VAL] = {
 	L_MAX_YARK,
@@ -124,9 +131,89 @@ const unsigned short int confValMax[MENU_COUNT_VAL] = {
 	COMMA_EFF_MAX,
   DATA_INTERV_MAX};
 
+//~~~~~~~~~~~~~~ Значение пункта меню <-> то, что показывают лампы и выбирает пользователь ~~~~~~~~~~~~~~
+//На 6 лампах они совпадают. На 4 лампах значение пункта показывается на двух лампах (0..99), а цвет
+//подсветки (0..368) в две цифры не помещается, поэтому цвет выбирается по индексу:
+//  0..89  - оттенок, значение = индекс*4 (шаг 4 из 360);
+//  90..97 - эффекты подсветки (значения 361..368), только в пункте "цвет всех".
+//Во flash хранится само значение (формат настроек не меняется), индекс нужен только для показа и выбора.
+//Сохраненное значение не из сетки (например 19) показывается ближайшим индексом, пока его не изменят.
+#define COLOR_IDX_COUNT 90
+#define COLOR_IDX_STEP 4
+
+//Значение пункта -> индекс (то, что видит и крутит пользователь)
+unsigned short confItemToUi(unsigned char item, unsigned short value)
+{
+	if((item == CONF_DT_D)||(item == CONF_DT_M)) return (value > 0) ? value-1 : 0;//День и месяц начинаются с 1
+#if GDI_COUNT == 4
+	if((item == CONF_LC_ALL)||((item >= CONF_LC_1)&&(item <= CONF_LC_6)))
+	{
+		if(value > WS_ENCOCOLOR_VAL) return COLOR_IDX_COUNT + (value - WS_ENCOCOLOR_VAL - 1);
+		//Значения 358..360 ближе всего к красному (индекс 0)
+		return ((value + COLOR_IDX_STEP/2)/COLOR_IDX_STEP) % COLOR_IDX_COUNT;
+	}
+#else
+	(void)item;
+#endif
+	return value;
+}
+
+//Индекс -> значение пункта
+unsigned short confUiToItem(unsigned char item, unsigned short ui)
+{
+	if((item == CONF_DT_D)||(item == CONF_DT_M)) return ui+1;
+#if GDI_COUNT == 4
+	if((item == CONF_LC_ALL)||((item >= CONF_LC_1)&&(item <= CONF_LC_6)))
+	{
+		if(ui >= COLOR_IDX_COUNT) return WS_ENCOCOLOR_VAL + 1 + (ui - COLOR_IDX_COUNT);
+		return ui*COLOR_IDX_STEP;
+	}
+#else
+	(void)item;
+#endif
+	return ui;
+}
+
+//Наибольший индекс (включительно)
+unsigned short confItemUiMax(unsigned char item)
+{
+	if(item == CONF_DT_D) return daysInMonth(tmdt.month, tmdt.year)-1;//Дней в текущем месяце
+	if(item == CONF_DT_M) return confValMax[CONF_DT_M]-1;
+#if GDI_COUNT == 4
+	if(item == CONF_LC_ALL) return COLOR_IDX_COUNT + COUNT_LED_EFF - 1;
+	if((item >= CONF_LC_1)&&(item <= CONF_LC_6)) return COLOR_IDX_COUNT - 1;
+#endif
+	return confValMax[item];
+}
+
 
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~New Univers Functions																										
+//День не может быть меньше 1 и больше числа дней в текущем месяце
+static unsigned short confClampDay(unsigned short day)
+{
+	unsigned char dim = daysInMonth(tmdt.month, tmdt.year);
+	if(day < 1) return 1;
+	if(day > dim) return dim;
+	return day;
+}
+
+//После смены месяца или года день, которого в этом месяце нет (31.02, 29.02 в невисокосный год),
+//заменяется последним днем месяца. showDay - показать новый день на лампах 0-1.
+static void confClampDayToMonth(unsigned char showDay)
+{
+	unsigned char dim = daysInMonth(tmdt.month, tmdt.year);
+	if(tmdt.day <= dim) return;
+	tmdt.day = dim;
+	prevConfVals[CONF_DT_D] = dim;
+	flgSetDt = 1;
+	if(showDay)
+	{
+		gdiVal[0] = dim/10; gdiVal[1] = dim%10;
+		setIndCathFade(0,gdiVal[0]); setIndCathFade(1,gdiVal[1]);
+	}
+}
+
  void confSetYark(unsigned short int currValue)
 {
 	
@@ -187,6 +274,7 @@ const unsigned short int confValMax[MENU_COUNT_VAL] = {
 }
  void confSetDay(unsigned short int currValue)
 {		
+	currValue = confClampDay(currValue);
 	setIndCathFade(0,tmdt.day/10); setIndCathFade(1,tmdt.day%10);
 	setIndCathFade(2,tmdt.month/10); setIndCathFade(3,tmdt.month%10);
 	setIndCathFade(4,tmdt.year/10); setIndCathFade(5,tmdt.year%10);
@@ -213,9 +301,12 @@ const unsigned short int confValMax[MENU_COUNT_VAL] = {
  void confSetMonth(unsigned short int currValue)
 {	
 	//flagTmDtConf = CONF_DATE_VALUE;	
+	if(currValue < 1) currValue = 1;
+	if(currValue > MAX_MONTH_VAL) currValue = MAX_MONTH_VAL;
 	if(currValue!=tmdt.month) flgSetDt = 1;
 	tmdt.month = currValue;			
 	prevConfVals[CONF_DT_M] = currValue;
+	confClampDayToMonth(1);
 	gdiVal[2] = tmdt.month/10;
 	gdiVal[3] = tmdt.month%10;		
 	setIndCathFade(2,gdiVal[2]);				
@@ -229,10 +320,23 @@ const unsigned short int confValMax[MENU_COUNT_VAL] = {
 	if(currValue!=tmdt.year) flgSetDt = 1;
 	tmdt.year = currValue;	
 	prevConfVals[CONF_DT_Y] = currValue;
+	confClampDayToMonth(GDI_COUNT == 6);//На 4 лампах год занимает все лампы, день не виден
+#if GDI_COUNT == 4
+	//Часы без секунд: год показывается на всех четырех лампах как 20ГГ
+	gdiVal[0] = 2;
+	gdiVal[1] = 0;
+	gdiVal[2] = tmdt.year/10;
+	gdiVal[3] = tmdt.year%10;
+	setIndCathFade(0,gdiVal[0]);
+	setIndCathFade(1,gdiVal[1]);
+	setIndCathFade(2,gdiVal[2]);
+	setIndCathFade(3,gdiVal[3]);
+#else
 	gdiVal[4] = tmdt.year/10;
-	gdiVal[5] = tmdt.year%10;		
-	setIndCathFade(4,gdiVal[4]);				
-	setIndCathFade(5,gdiVal[5]);		
+	gdiVal[5] = tmdt.year%10;
+	setIndCathFade(4,gdiVal[4]);
+	setIndCathFade(5,gdiVal[5]);
+#endif
 if(flgSetDt){ setDate(tmdt.day,tmdt.month,tmdt.year); flgSetDt = 0; }	
 }
 
@@ -324,7 +428,7 @@ void confAllLedsBright(unsigned short int currValue)
 		case CONF_TM_S:{confSetSec(val); indBl = 5; break;}//4 секунда
 		case CONF_DT_D:{confSetDay(val); indBl = 1; break;}//5 день
 		case CONF_DT_M:{confSetMonth(val); indBl = 3; break;}//6 месяц
-		case CONF_DT_Y:{confSetYear(val);indBl = 5; break;}//7 год
+		case CONF_DT_Y:{confSetYear(val);indBl = IND_BL_YEAR; break;}//7 год
 		case CONF_LC_ALL:{confAllLedsColor(val);break;}//8 цвет подсветки всех индикаторов
 		case CONF_LC_1:{confLedColor(val,0);break;}//9 цвет подсветки 1
 		case CONF_LC_2:{confLedColor(val,1);break;}//10 --2
@@ -346,7 +450,7 @@ void confAllLedsBright(unsigned short int currValue)
 		case CONF_DATA_INTERV:{confDataInterv(val);break;} // 26 выбор интервала даты 0-20мин 1-1час 2-3часа 4-5часов
 		default:break;
 	}
-	if((punkt>CONF_DT_Y)&&(flagConfMode == CONF_MODE_ON)) set2NumsToIndsEff(punkt,val);
+	if((punkt>CONF_DT_Y)&&(flagConfMode == CONF_MODE_ON)) set2NumsToIndsEff(punkt,confItemToUi(punkt,val));
 }
 
 //Заводские значения подсветки
@@ -510,10 +614,11 @@ static void stepItem(unsigned char item, signed char delta)
 	int max, value;
 	if(itemIsEffBright(item)) max = MAX_EFF_BRIGHT;
 	else if(item == CONF_GD_EFF) max = confValMax[item]-1;//confValMax - число эффектов
-	else max = confValMax[item];
-	value = itemValue(item)+delta;
+	else max = confItemUiMax(item);
+	value = confItemToUi(item,itemValue(item))+delta;//Считаем в индексах (на 6 лампах они равны значениям)
 	if(value>max) value = 0;
 	else if(value<0) value = max;
+	value = confUiToItem(item,value);
 	swMenu(item,value);
 	prevConfVals[item] = value;//Сохраняем состояние
 }
@@ -536,9 +641,21 @@ static unsigned char menuEnter(void)
 	return CONF_TM_H;
 }
 
+//Пункты, которых нет в меню часов без секунд: секунды и вид отображения секунд
+static unsigned char menuItemHidden(unsigned char item)
+{
+#if GDI_COUNT == 4
+	return (item == CONF_TM_S) || (item == CONF_SEC_TYPE);
+#else
+	(void)item;
+	return 0;
+#endif
+}
+
 //Переход к следующему пункту меню. Возвращает его номер, MENU_COUNT_VAL - если меню закончилось.
 static unsigned char menuNextItem(unsigned char item)
 {
+	unsigned char next;
 	//При уходе с секунд записываем их в DS3231 (часы и минуты записываются сразу при изменении)
 	if((item == CONF_TM_S)&&flgSetTm){setTimeSec(tmdt.sec); flgSetTm = 0;}
 	//При уходе с года сбрасываем мигание индикаторов
@@ -548,8 +665,11 @@ static unsigned char menuNextItem(unsigned char item)
 		indBl = 0; flagTmDtConf = CONF_NO_VALUE;
 	}
 	//Если включен эффект подсветки, индивидуальные цвета и яркости ламп пропускаем
-	if(ledEffType && ((item == CONF_LC_ALL)||(item == CONF_LB_ALL))) return item+7;
-	return item+1;
+	next = item+1;
+	if(ledEffType && ((item == CONF_LC_ALL)||(item == CONF_LB_ALL))) next = item+7;
+	//Пропускаем пункты, скрытые в этом типе часов
+	while((next < MENU_COUNT_VAL) && menuItemHidden(next)) next++;
+	return next;
 }
 
 //Выход из режима настройки после последнего пункта (по таймауту выходит main)
@@ -675,10 +795,10 @@ void confByEnc(unsigned char bv, unsigned short int ev, signed char sign)
 				swMenu(menuItem,ev);
 				return;
 			}
-			setEncVal(ev = prevConfVals[menuItem]);
-			setMaxEncVal(confValMax[menuItem]);
+			setEncVal(ev = confItemToUi(menuItem,prevConfVals[menuItem]));
+			setMaxEncVal(confItemUiMax(menuItem));
 		}
-		if(bv||sign) swMenu(menuItem,ev);
+		if(bv||sign) swMenu(menuItem,confUiToItem(menuItem,ev));
 	}
 }
 //Обработка пользовательского интерфейса ввода

@@ -6,6 +6,10 @@
 
 
 #ifdef MODULE_IN4_4
+//Подсветка: светодиоды 1-4 под лампами, 5-6 корпус; LED_FIRE_LEVELS - уровни огня по светодиодам (ws2812.c)
+#define LED_FIRE_LEVELS {2,0,0,2,2,2}
+#define GDI_COUNT 4
+#define ENC_QSTEPS 2
 #define CATHODE_9 0x0010//k
 #define CATHODE_8 0x0020//k
 #define CATHODE_7 0x0008//k
@@ -28,6 +32,8 @@
 #endif
 
 #ifdef MODULE_IN4
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 #define CATHODE_6 0x0010//k6
 #define CATHODE_4 0x0020//k4
 #define CATHODE_8 0x0008//k8
@@ -51,6 +57,8 @@
 #endif
 
 #ifdef MODULE_IN4_4DBG
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 #define CATHODE_9 0x0010//k6
 #define CATHODE_8 0x0020//k4
 #define CATHODE_7 0x0008//k8
@@ -74,6 +82,8 @@
 #endif
 
 #ifdef MODULE_IN14_R
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 #define CATHODE_9 0x0100//k
 #define CATHODE_7 0x0020//k
 #define CATHODE_8 0x0080//k
@@ -98,6 +108,8 @@
 
 
 #ifdef MODULE_IN14_SPB
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 #define CATHODE_9 0x0080//k
 #define CATHODE_7 0x0020//k
 #define CATHODE_8 0x0040//k
@@ -121,6 +133,8 @@
 #endif
 
 #ifdef MODULE_IN8_SPB
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 #define CATHODE_9 0x0080//k
 #define CATHODE_7 0x0010//k
 #define CATHODE_8 0x0040//k
@@ -144,6 +158,8 @@
 #endif
 
 #ifdef MODULE_ZM570M
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 #define CATHODE_0 0x0800//k
 #define CATHODE_1 0x1000//k
 #define CATHODE_2 0x8000//k
@@ -167,6 +183,8 @@
 #endif
 
 #ifdef MODULE_IN17
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 //#define CONF_BUTT
 #define CATHODE_9 0x0040//k
 #define CATHODE_7 0x0400//k
@@ -191,6 +209,8 @@
 
 
 #ifdef MODULE_IN12Z_R
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 #define CATHODE_3 0x0040//k3
 #define CATHODE_0 0x0400//k0
 #define CATHODE_1 0x0800//k1 
@@ -213,6 +233,8 @@
 #endif
 
 #ifdef MODULE_IN8_R
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 #define CATHODE_2 0x8000//kzz
 #define CATHODE_5 0x0004//k00
 #define CATHODE_8 0x0080//k99
@@ -237,6 +259,8 @@
 #endif
 
 #ifdef MODULE_IN8_RN
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 #define CATHODE_7 0x0400
 #define CATHODE_3 0x0020
 #define CATHODE_6 0x0080
@@ -260,6 +284,8 @@
 #endif
 
 #ifdef MODULE_IN12_6
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 #define CATHODE_0 0x0010
 #define CATHODE_1 0x0008
 #define CATHODE_2 0x0080
@@ -284,6 +310,8 @@
 
 
 #ifdef MODULE_IN14_SP
+#define GDI_COUNT 6
+#define ENC_QSTEPS 2
 #define CATHODE_0 0x0008
 #define CATHODE_1 0x0010
 #define CATHODE_2 0x0020
@@ -304,6 +332,125 @@
 #define LAMP_4 0x1000
 #define LAMP_5 0x0400
 #define LAMP_6 0x0800
+#endif
+
+#ifdef MODULE_IN12_4
+//Подсветка: светодиоды 1-4 под лампами, 5-6 корпус; LED_FIRE_LEVELS - уровни огня по светодиодам (ws2812.c)
+#define LED_FIRE_LEVELS {2,0,0,2,2,2}
+#define GDI_COUNT 4
+#define ENC_QSTEPS 2
+#define CATHODE_9 0x0080//k
+#define CATHODE_7 0x0800//k
+#define CATHODE_8 0x0400//k
+#define CATHODE_2 0x0020//k
+#define CATHODE_6 0x1000//k
+#define CATHODE_0 0x0008//k
+#define CATHODE_5 0x0200//k
+#define CATHODE_4 0x0100//
+#define CATHODE_3 0x0040//k
+#define CATHODE_1 0x0010//k
+#define ZPT_L 0x0004
+#define ZPT_R 0x0004
+
+#define LAMP_1 0x1000
+#define LAMP_2 0x2000
+#define LAMP_3 0x4000
+#define LAMP_4 0x8000
+#define LAMP_5 0
+#define LAMP_6 0
+#endif
+
+
+
+#ifdef MODULE_IN8_4
+//Подсветка: светодиоды 3-6 под лампами, 1-2 корпус; LED_FIRE_LEVELS - уровни огня по светодиодам (ws2812.c)
+#define LED_FIRE_LEVELS {2,2,2,0,0,2}
+//ВРЕМЕННО: разводка скопирована с MODULE_IN8_SPB, заменить разводкой реальной платы
+#define GDI_COUNT 4
+#define ENC_QSTEPS 2
+#define CATHODE_9 0x0080//k
+#define CATHODE_7 0x0010//k
+#define CATHODE_8 0x0040//k
+#define CATHODE_2 0x0800//k
+#define CATHODE_6 0x0008//k
+#define CATHODE_0 0x0200//k
+#define CATHODE_5 0x0004//k
+#define CATHODE_4 0x0100//
+#define CATHODE_3 0x1000//k
+#define CATHODE_1 0x0400//k
+#define ZPT_L 0x0020
+#define ZPT_R 0x0020
+
+
+#define LAMP_1 0x4000
+#define LAMP_2 0x2000
+#define LAMP_3 0x1000
+#define LAMP_4 0x8000
+#define LAMP_5 0
+#define LAMP_6 0
+#endif
+
+#ifdef MODULE_IN14_4
+//Подсветка: светодиоды 3-6 под лампами, 1-2 корпус; LED_FIRE_LEVELS - уровни огня по светодиодам (ws2812.c)
+#define LED_FIRE_LEVELS {2,2,2,0,0,2}
+#define GDI_COUNT 4
+#define ENC_QSTEPS 4
+#define CATHODE_8 0x0080//k
+#define CATHODE_6 0x0800//k
+#define CATHODE_7 0x0400//k
+#define CATHODE_9 0x0020//ki
+#define CATHODE_5 0x1000//k
+#define CATHODE_0 0x0008//k
+#define CATHODE_4 0x0200//k
+#define CATHODE_3 0x0100//
+#define CATHODE_2 0x0040//k
+#define CATHODE_1 0x0010//k
+#define ZPT_L 0x0004
+#define ZPT_R 0x0004
+
+#define LAMP_1 0x1000
+#define LAMP_4 0x2000
+#define LAMP_2 0x4000
+#define LAMP_3 0x8000
+#define LAMP_5 0
+#define LAMP_6 0
+#endif
+/*
+#ifdef MODULE_IN14_4
+//ВРЕМЕННО: разводка скопирована с MODULE_IN14_SPB, заменить разводкой реальной платы
+#define GDI_COUNT 4
+#define CATHODE_9 0x0080//k
+#define CATHODE_7 0x0020//k
+#define CATHODE_8 0x0040//k
+#define CATHODE_2 0x1000//k
+#define CATHODE_6 0x0010//k
+#define CATHODE_0 0x0200//k
+#define CATHODE_5 0x0008//k
+#define CATHODE_4 0x0004//
+#define CATHODE_3 0x0100//k
+#define CATHODE_1 0x0800//k
+#define ZPT_L 0x0400
+#define ZPT_R 0x0400
+
+
+#define LAMP_1 0x4000
+#define LAMP_2 0x2000
+#define LAMP_3 0x1000
+#define LAMP_4 0x8000
+#define LAMP_5 0
+#define LAMP_6 0
+#endif
+*/
+//Число ламп задает модуль (GDI_COUNT: 4 - часы без секунд, 6 - с секундами).
+//Массивы остаются на 6 ламп, число ламп ограничивает только циклы и логику.
+#ifndef GDI_COUNT
+#error "gdi.h: выбранный MODULE_* не задает GDI_COUNT"
+#endif
+#if (GDI_COUNT != 4) && (GDI_COUNT != 6)
+#error "gdi.h: GDI_COUNT должно быть 4 или 6"
+#endif
+#if (GDI_COUNT == 6) && ((LAMP_5 == 0) || (LAMP_6 == 0))
+#error "gdi.h: GDI_COUNT == 6, но у модуля нет анодов LAMP_5/LAMP_6"
 #endif
 
 #define L_MAX_YARK 60 
